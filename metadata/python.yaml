@@ -1,0 +1,20 @@
+name: python
+family: runtime
+version: "3.13"
+
+upstream: python
+base: ghcr.io/sm-joe/enterprise-hardened-images/enterprise-hardened-debian:13
+
+architectures:
+  - linux/amd64
+  - linux/arm64
+
+user: 10001
+group: 10001
+
+security:
+  profile: cis-l1-aligned
+  non_root: true
+  sbom: true
+  provenance: true
+  signing: true

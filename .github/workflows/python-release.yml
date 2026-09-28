@@ -1,0 +1,238 @@
+name: Python Image Release Pipeline
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Python image release version
+        required: true
+        type: string
+        default: "3.13"
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository_owner }}/enterprise-hardened-python
+  IMAGE_VERSION: ${{ inputs.version }}
+
+jobs:
+  validate:
+    name: Validate Python Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Validate Required Files
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          required_files=(
+            "images/runtime/python/Dockerfile"
+            "metadata/python.yaml"
+            "metadata/image.schema.json"
+            "tests/container/test-python-base.sh"
+          )
+
+          for file in "${required_files[@]}"; do
+            if [[ ! -f "${file}" ]]; then
+              echo "FAIL: required file missing: ${file}"
+              exit 1
+            fi
+
+            echo "PASS: ${file}"
+          done
+
+      - name: Validate Python Version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          version="${{ inputs.version }}"
+
+          if [[ ! "${version}" =~ ^3\.13$ ]]; then
+            echo "ERROR: unsupported Python version '${version}'"
+            echo "Expected: 3.13"
+            exit 1
+          fi
+
+          echo "PASS: Python version ${version}"
+
+      - name: Validate Meetadata Version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          python3 - <<'PY'
+          import pathlib
+          import re
+
+          path = pathlib.Path("metadata/python.yaml")
+          text = path.read_text()
+
+          match = re.search(r'^version:\s*"([^"]+)"\s*$', text, re.MULTILINE)
+
+          if not match:
+              raise SystemExit("FAIL: metadata/python.yaml has no version")
+
+          version = match.group(1)
+
+          if version != "3.13":
+              raise SystemExit(
+                  f"FAIL: metadata version is {version!r}; expected '3.13'"
+              )
+
+          print(f"PASS: metadata version {version}")
+          PY
+
+  build:
+    name: Build and Sign Python Image
+    needs:
+      - validate
+
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and Push Python Image
+        id: build-and-push
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: images/runtime/python/Dockerfile
+          platforms: |
+            linux/amd64
+            linux/arm64
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_VERSION }}
+          provenance: true
+          sbom: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Capture Image Digest
+        env:
+          DIGEST: ${{ steps.build-and-push.outputs.digest }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ ! "${DIGEST}" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+            echo "FAIL: invalid image digest: ${DIGEST}"
+            exit 1
+          fi
+
+          echo "Image digest:"
+          echo "${DIGEST}"
+
+          echo "PYTHON_IMAGE_DIGEST=${DIGEST}" >> "${GITHUB_ENV}"
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign Python Image
+        env:
+          IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_VERSION }}
+          DIGEST: ${{ steps.build-and-push.outputs.digest }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cosign sign --yes "${IMAGE}@${DIGEST}"
+
+          echo "PASS: Python image signed"
+
+      - name: Verify Python Image Signature
+        env:
+          IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build-and-push.outputs.digest }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cosign verify \
+            --certificate-identity-regexp "^https://github.com/${{ github.repository }}/.github/workflows/python-release.yml@refs/heads/main$" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            "${IMAGE}"
+
+          echo "PASS: Python image signature verified"
+
+      - name: Inspect Published Image
+        env:
+          IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_VERSION }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          docker buildx imagetools inspect "${IMAGE}"
+
+          echo "PASS: published Python manifest is accessible"
+
+      - name: Verify Published Digest
+        env:
+          IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_VERSION }}
+          EXPECTED_DIGEST: ${{ steps.build-and-push.outputs.digest }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          published_digest="$(
+            docker buildx imagetools inspect "${IMAGE}" \
+              --format '{{json .Manifest.Digest}}'
+          )"
+
+          published_digest="${published_digest//\"/}"
+
+          echo "Expected: ${EXPECTED_DIGEST}"
+          echo "Published: ${published_digest}"
+
+          if [[ "${published_digest}" != "${EXPECTED_DIGEST}" ]]; then
+            echo "FAIL: published digest does not match build digest"
+            exit 1
+          fi
+
+          echo "PASS: published digest matches build digest"
+
+      - name: Release Summary
+        env:
+          IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_VERSION }}
+          DIGEST: ${{ steps.build-and-push.outputs.digest }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          {
+            echo "## Python Image Release"
+            echo
+            echo "- Image: \`${IMAGE}\`"
+            echo "- Version: \`${{ env.IMAGE_VERSION }}\`"
+            echo "- Digest: \`${DIGEST}\`"
+            echo "- Platforms: \`linux/amd64, linux/arm64\`"
+            echo "- SBOM: generated"
+            echo "- Provenance: generated"
+            echo "- Signature: verified"
+            echo "- Release model: immutable digest"
+          } >> "${GITHUB_STEP_SUMMARY}"
