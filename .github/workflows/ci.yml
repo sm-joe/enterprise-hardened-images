@@ -90,6 +90,14 @@ jobs:
           ignore-unfixed: true
           exit-code: "1"
 
+      - name: Generate Debian image SBOM
+        uses: anchore/sbom-action@v0.24.2
+        with:
+          image: enterprise-hardened-debian:test
+          format: spdx-json
+          output-file: debian-sbom.spdx.json
+          artifact-name: debian-sbom.spdx.json
+
       - name: Check repository policy
         run: |
           test -f docs/SECURITY-STANDARDS.md
