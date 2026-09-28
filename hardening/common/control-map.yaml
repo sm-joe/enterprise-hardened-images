@@ -1,0 +1,112 @@
+controls:
+  CTRL-001:
+    implementation_layer: common
+    description: Run as non-root
+
+  CTRL-002:
+    implementation_layer: common
+    description: Dedicated non-root group
+
+  CTRL-003:
+    implementation_layer: common
+    description: No sudo
+
+  CTRL-004:
+    implementation_layer: common
+    description: No unnecessary setuid/setgid binaries
+
+  CTRL-005:
+    implementation_layer: runtime
+    description: Privilege escalation disabled
+
+  CTRL-006:
+    implementation_layer: runtime
+    description: Drop unnecessary Linux capabilities
+
+  CTRL-007:
+    implementation_layer: runtime
+    description: Read-only root filesystem compatibility
+
+  CTRL-008:
+    implementation_layer: common
+    description: Sensitive filesystem permissions restricted
+
+  CTRL-009:
+    implementation_layer: common
+    description: Temporary and cache data minimized
+
+  CTRL-010:
+    implementation_layer: distribution
+    description: Minimal package footprint
+
+  CTRL-011:
+    implementation_layer: distribution
+    description: No unnecessary network/debug tools
+
+  CTRL-012:
+    implementation_layer: distribution
+    description: Package manager metadata cleaned
+
+  CTRL-013:
+    implementation_layer: build
+    description: No secrets in image layers
+
+  CTRL-014:
+    implementation_layer: image
+    description: No credentials in environment defaults
+
+  CTRL-015:
+    implementation_layer: metadata
+    description: Pinned base image release
+
+  CTRL-016:
+    implementation_layer: build
+    description: SBOM generated
+
+  CTRL-017:
+    implementation_layer: build
+    description: Build provenance generated
+
+  CTRL-018:
+    implementation_layer: release
+    description: Image cryptographically signed
+
+  CTRL-019:
+    implementation_layer: build
+    description: Multi-architecture build
+
+  CTRL-020:
+    implementation_layer: security
+    description: Critical vulnerabilities blocked
+
+  CTRL-021:
+    implementation_layer: security
+    description: High vulnerabilities governed
+
+  CTRL-022:
+    implementation_layer: source
+    description: Dockerfile linting
+
+  CTRL-023:
+    implementation_layer: source
+    description: Infrastructure and security static analysis
+
+  CTRL-024:
+    implementation_layer: runtime
+    description: Image smoke test
+
+  CTRL-025:
+    implementation_layer: runtime
+    description: Security regression test
+
+  CTRL-026:
+    implementation_layer: lifecycle
+    description: Upstream update detection
+
+  CTRL-027:
+    implementation_layer: lifecycle
+    description: CVE-triggered rebuild
+
+  CTRL-028:
+    implementation_layer: governance
+    description: Security exceptions documented
