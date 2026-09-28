@@ -1,4 +1,4 @@
-name: Foundation CI
+name: Foundation CI Pipeline
 
 on:
   pull_request:
