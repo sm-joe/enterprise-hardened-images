@@ -41,6 +41,8 @@ LABEL org.opencontainers.image.runtime.version="${NODE_VERSION}"
 
 COPY --from=node-source /node/ /usr/local/
 
+RUN npm install -g npm@latest && npm cache clean --force
+
 ENV NODE_ENV=production \
     NPM_CONFIG_UPDATE_NOTIFIER=false \
     NPM_CONFIG_FUND=false \
