@@ -85,6 +85,7 @@ jobs:
 
           bash tests/container/test-debian-base.sh enterprise-hardened-debian:test
           bash tests/runtime/test-debian-runtime.sh enterprise-hardened-debian:test
+          bash tests/container/test-image-policy.sh enterprise-hardened-debian:test
 
       - name: Scan Debian image for vulnerabilities
         uses: aquasecurity/trivy-action@v0.36.0

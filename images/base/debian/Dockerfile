@@ -16,9 +16,8 @@ RUN groupadd --gid 10001 app \
         --no-create-home \
         --home-dir /nonexistent \
         --shell /usr/sbin/nologin \
-        app
-
-RUN mkdir -p \
+        app \
+    && mkdir -p \
         /app \
         /tmp \
         /var/tmp \
@@ -26,21 +25,20 @@ RUN mkdir -p \
     && chown 10001:10001 /app \
     && chmod 0755 /app \
     && chmod 1777 /tmp /var/tmp \
-    && chmod 0755 /run
+    && chmod 0755 /run \
+    && find /usr/bin /usr/sbin \
+        -xdev \
+        -type f \
+        \( -perm -4000 -o -perm -2000 \) \
+        -exec chmod a-s {} + \
+    && rm -rf \
+        /var/lib/apt/lists/* \
+        /var/cache/apt/* \
+        /var/cache/debconf/* \
+        /var/log/apt/* \
+        /var/log/dpkg.log \
+        /var/log/alternatives.log
 
-RUN find /usr/bin /usr/sbin \
-    -xdev \
-    -type f \
-    \( -perm -4000 -o -perm -2000 \) \
-    -exec chmod a-s {} +
-
-RUN rm -rf \
-    /var/lib/apt/lists/* \
-    /var/cache/apt/* \
-    /var/cache/debconf/* \
-    /var/log/apt/* \
-    /var/log/dpkg.log \
-    /var/log/alternatives.log
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
     CMD ["/bin/sh", "-c", "test \"$(id -u)\" -eq 10001 && test \"$(id -g)\" -eq 10001 && test -d /app"]
