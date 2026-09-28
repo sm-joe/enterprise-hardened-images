@@ -1,0 +1,13 @@
+.git
+.github
+.vscode
+.idea
+docs
+tests
+scripts
+metadata
+policies
+*.md
+*.log
+.env
+.env.*

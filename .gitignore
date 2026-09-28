@@ -1,0 +1,26 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Build output
+dist/
+build/
+out/
+coverage/
+
+# Security artifacts generated locally
+*.sarif
+*.sbom
+*.spdx.json
+*.cyclonedx.json
+*.attestation.json
+
+# Local environment
+.env
+.env.*
+!.env.example
+
+# Docker
+docker-compose.override.yml

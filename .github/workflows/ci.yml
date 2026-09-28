@@ -1,0 +1,53 @@
+name: Foundation CI
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/**"
+      - "hardening/**"
+      - "metadata/**"
+      - "policies/**"
+      - "scripts/**"
+      - "tests/**"
+      - "docs/**"
+      - "Makefile"
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/**"
+      - "hardening/**"
+      - "metadata/**"
+      - "policies/**"
+      - "scripts/**"
+      - "tests/**"
+      - "docs/**"
+      - "Makefile"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate foundation
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - name: Validate metadata
+        run: python scripts/validate_metadata.py
+
+      - name: Check repository policy
+        run: |
+          test -f docs/SECURITY-STANDARDS.md
+          test -f docs/ARCHITECTURE.md
+          test -f metadata/image.schema.json
+          test -f metadata/debian.yaml

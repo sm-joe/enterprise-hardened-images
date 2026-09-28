@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Enterprise Hardened Image Contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "name",
+    "family",
+    "version",
+    "upstream",
+    "security"
+  ],
+  "properties": {
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]*$"
+    },
+    "family": {
+      "type": "string"
+    },
+    "version": {
+      "type": "string"
+    },
+    "upstream": {
+      "type": "string"
+    },
+    "base": {
+      "type": "string"
+    },
+    "architectures": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "linux/amd64",
+          "linux/arm64"
+        ]
+      }
+    },
+    "user": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "group": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "security": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "non_root",
+        "sbom",
+        "provenance",
+        "signing"
+      ],
+      "properties": {
+        "profile": {
+          "type": "string",
+          "enum": [
+            "cis-l1-aligned"
+          ]
+        },
+        "non_root": {
+          "type": "boolean"
+        },
+        "sbom": {
+          "type": "boolean"
+        },
+        "provenance": {
+          "type": "boolean"
+        },
+        "signing": {
+          "type": "boolean"
+        }
+      }
+    }
+  }
+}

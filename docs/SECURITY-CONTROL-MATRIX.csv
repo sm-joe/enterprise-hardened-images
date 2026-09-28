@@ -1,0 +1,29 @@
+control_id,domain,control,scope,priority,implementation,acceptance_criteria,ci_behavior
+CTRL-001,Identity,Run as non-root,Container,Required,Dockerfile USER plus runtime test,UID >= 10001,Fail
+CTRL-002,Identity,Dedicated non-root group,Container,Required,Dockerfile USER, GID >= 10001,Fail
+CTRL-003,Privilege,No sudo,Image,Required,Package and filesystem test,sudo absent,Fail
+CTRL-004,Privilege,No unnecessary setuid/setgid binaries,Image,Required,Filesystem test,Approved exception list only,Fail
+CTRL-005,Privilege,Privilege escalation disabled,Runtime,Required,Runtime and Kubernetes policy,allowPrivilegeEscalation=false,Fail
+CTRL-006,Capabilities,Drop unnecessary Linux capabilities,Runtime,Required,Runtime test,cap-drop=ALL where supported,Fail
+CTRL-007,Filesystem,Read-only root filesystem compatible,Runtime,Target,Runtime test,Application writes only approved paths,Fail when target requires it
+CTRL-008,Filesystem,Sensitive filesystem permissions restricted,Image,Required,Filesystem test,No world-writable sensitive paths,Fail
+CTRL-009,Filesystem,Temporary and cache data minimized,Image,Required,Build inspection,No package-manager cache,Fail
+CTRL-010,Packages,Minimal package footprint,Image,Required,Package inventory,Only documented runtime/build packages,Fail
+CTRL-011,Packages,No unnecessary network/debug tools,Image,Required,Package inventory,curl/wget/ssh/etc. absent unless justified,Fail
+CTRL-012,Packages,Package manager metadata cleaned,Image,Required,Filesystem test,No stale package lists/cache,Fail
+CTRL-013,Secrets,No secrets in image layers,Build,Required,Secret scanner,Zero confirmed secrets,Fail
+CTRL-014,Secrets,No credentials in environment defaults,Image,Required,Image config test,No static credentials or tokens,Fail
+CTRL-015,Supply Chain,Pinned base image release,Build,Required,Metadata validation,Explicit upstream version,Fail
+CTRL-016,Supply Chain,SBOM generated,Artifact,Required,BuildKit attestation,SPDX or CycloneDX available,Fail
+CTRL-017,Supply Chain,Build provenance generated,Artifact,Required,BuildKit attestation,Provenance attestation available,Fail
+CTRL-018,Supply Chain,Image cryptographically signed,Artifact,Required,Cosign verification,Valid signature,Fail
+CTRL-019,Supply Chain,Multi-architecture build,Artifact,Required,Buildx manifest inspection,amd64 and arm64,Fail
+CTRL-020,Vulnerability,Critical vulnerabilities blocked,Image,Required,Trivy or approved scanner,0 unresolved criticals,Fail
+CTRL-021,Vulnerability,High vulnerabilities governed,Image,Required,Trivy or approved scanner,Policy-defined exceptions only,Fail
+CTRL-022,Build,Dockerfile linting,Source,Required,Hadolint,No blocking findings,Fail
+CTRL-023,Build,Infrastructure and security static analysis,Source,Required,Checkov or approved scanner,No blocking findings,Fail
+CTRL-024,Testing,Image smoke test,Runtime,Required,Container test,Starts and health behavior validated,Fail
+CTRL-025,Testing,Security regression test,Runtime,Required,Container test,Baseline controls remain true,Fail
+CTRL-026,Lifecycle,Upstream update detection,Repository,Required,Renovate or automation,PR generated for updates,Fail
+CTRL-027,Lifecycle,CVE-triggered rebuild,Repository,Required,Scheduled or event workflow,Affected images rebuilt,Fail
+CTRL-028,Governance,Security exceptions documented,Governance,Required,Exception manifest and review,Owner reason and expiry,Fail
