@@ -161,6 +161,40 @@ jobs:
             --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
             "${IMAGE}"
 
+      - name: Verify published image manifest
+        env:
+          IMAGE: ${{ steps.image.outputs.IMAGE }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          docker buildx imagetools inspect "${IMAGE}"
+
+          echo "PASS: published image manifest is accessible"
+
+      - name: Verify release digest
+        env:
+          IMAGE: ${{ steps.image.outputs.IMAGE }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          digest="${{ steps.build.outputs.digest }}"
+
+          if [[ "${IMAGE}" != *@sha256:* ]]; then
+            echo "FAIL: release reference is not digest-qualified"
+            exit 1
+          fi
+
+          if [[ "${IMAGE}" != *"${digest}" ]]; then
+            echo "FAIL: immutable image reference does not match build digest"
+            echo "Expected: ${digest}"
+            echo "Actual: ${IMAGE}"
+            exit 1
+          fi
+
+          echo "PASS: release reference matches build digest"
+
       - name: Release summary
         env:
           IMAGE: ${{ steps.image.outputs.IMAGE }}
