@@ -41,6 +41,8 @@ LABEL org.opencontainers.image.runtime.version="${NODE_VERSION}"
 
 COPY --from=node-source /node/ /usr/local/
 
+USER root
+
 RUN HOME=/tmp npm install -g npm@latest \
     && npm cache clean --force
 
