@@ -58,9 +58,12 @@ jobs:
         run: |
           docker buildx build \
             --load \
-            --tag enterprise-hardened-debian:test \
+            --tag localhost/enterprise-hardened-debian:test \
             images/base/debian
-          bash tests/container/test-debian-base.sh enterprise-hardened-debian:test
+
+          docker image inspect localhost/enterprise-hardened-debian:test
+
+          bash tests/container/test-debian-base.sh localhost/enterprise-hardened-debian:test
 
       - name: Check repository policy
         run: |
