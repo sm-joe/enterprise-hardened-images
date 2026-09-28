@@ -32,6 +32,11 @@ jobs:
     timeout-minutes: 10
 
     steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      
       - name: Validate Release Version
         shell: bash
         run: |
