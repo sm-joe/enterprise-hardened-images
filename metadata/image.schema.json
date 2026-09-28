@@ -1,6 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Enterprise Hardened Image Contract",
+  "title": "Enterprise Hardened Container Image Contract",
+  "description": "Machine-readable metadata contract for enterprise hardened container images.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -8,27 +9,37 @@
     "family",
     "version",
     "upstream",
+    "base",
+    "architectures",
     "security"
   ],
   "properties": {
     "name": {
       "type": "string",
+      "description": "Canonical image name.",
       "pattern": "^[a-z0-9][a-z0-9._-]*$"
     },
     "family": {
-      "type": "string"
+      "type": "string",
+      "description": "Logical image family such as base, python, node, java, or nginx."
     },
     "version": {
-      "type": "string"
+      "type": "string",
+      "description": "Image/runtime version represented by this artifact."
     },
     "upstream": {
-      "type": "string"
+      "type": "string",
+      "description": "Upstream project or distribution."
     },
     "base": {
-      "type": "string"
+      "type": "string",
+      "description": "Base image reference used to build this image."
     },
     "architectures": {
       "type": "array",
+      "description": "OCI target platforms supported by the image.",
+      "minItems": 1,
+      "uniqueItems": true,
       "items": {
         "type": "string",
         "enum": [
@@ -39,11 +50,35 @@
     },
     "user": {
       "type": "integer",
-      "minimum": 1
+      "minimum": 1,
+      "description": "Default non-root UID."
     },
     "group": {
       "type": "integer",
-      "minimum": 1
+      "minimum": 1,
+      "description": "Default non-root GID."
+    },
+    "entrypoint": {
+      "type": "array",
+      "description": "Default image entrypoint.",
+      "items": {
+        "type": "string"
+      }
+    },
+    "healthcheck": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "required": {
+          "type": "boolean"
+        },
+        "description": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "required"
+      ]
     },
     "security": {
       "type": "object",
@@ -63,16 +98,20 @@
           ]
         },
         "non_root": {
-          "type": "boolean"
+          "type": "boolean",
+          "const": true
         },
         "sbom": {
-          "type": "boolean"
+          "type": "boolean",
+          "const": true
         },
         "provenance": {
-          "type": "boolean"
+          "type": "boolean",
+          "const": true
         },
         "signing": {
-          "type": "boolean"
+          "type": "boolean",
+          "const": true
         }
       }
     }
