@@ -1,0 +1,158 @@
+name: Node.js 22 CI Pipeline
+
+on:
+  pull_request:
+    paths:
+      - "images/runtime/node/**"
+      - "metadata/node.yaml"
+      - "metadata/image.schema.json"
+      - "tests/container/test-node-base.sh"
+      - "hardening/**"
+      - "policies/**"
+      - ".github/workflows/node-ci.yml"
+
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate Node.js image
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Validate Required Files
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          required_files=(
+            "images/runtime/node/Dockerfile"
+            "metadata/node.yaml"
+            "metadata/image.schema.json"
+            "tests/container/test-node-base.sh"
+          )
+
+          for file in "${required_files[@]}"; do
+            if [[ ! -f "${file}" ]]; then
+              echo "FAIL: required file missing: ${file}"
+              exit 1
+            fi
+
+            echo "PASS: ${file}"
+          done
+
+      - name: Validate Node Metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          python3 - <<'PY'
+          import pathlib
+          import re
+
+          path = pathlib.Path("metadata/node.yaml")
+          text = path.read_text()
+
+          required = {
+              "name": "node",
+              "family": "runtime",
+              "version": "22",
+          }
+
+          for key, expected in required.items():
+              match = re.search(
+                  rf'^{re.escape(key)}:\s*"?([^"\n]+)"?\s*$',
+                  text,
+                  re.MULTILINE,
+              )
+
+              if not match:
+                  raise SystemExit(
+                      f"FAIL: missing metadata field: {key}"
+                  )
+
+              actual = match.group(1).strip()
+
+              if actual != expected:
+                  raise SystemExit(
+                      f"FAIL: {key}={actual!r}; expected {expected!r}"
+                  )
+
+          print("PASS: Node metadata is valid")
+          PY
+
+      - name: Lint Node Dockerfile
+        uses: hadolint/hadolint-action@v3
+        with:
+          dockerfile: images/runtime/node/Dockerfile
+          failure-threshold: warning
+
+      - name: Scan Repository Configuration
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          version: "v0.74.0"
+          scan-type: config
+          scan-ref: .
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+
+      - name: Build Node.js Image
+        run: |
+          docker build \
+            --tag enterprise-hardened-node:test \
+            images/runtime/node
+
+      - name: Inspect Node.js Image
+        run: |
+          docker image inspect enterprise-hardened-node:test
+
+      - name: Run Node.js Container Regression Tests
+        run: |
+          chmod +x tests/container/test-node-base.sh
+          tests/container/test-node-base.sh enterprise-hardened-node:test
+
+      - name: Scan Node.js Image
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: enterprise-hardened-node:test
+          format: table
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
+
+      - name: Generate Node.js SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          image: enterprise-hardened-node:test
+          format: spdx-json
+          output-file: node-sbom.spdx.json
+          artifact-name: node-sbom.spdx.json
+
+      - name: Upload Node.js SBOM
+        uses: actions/upload-artifact@v6
+        with:
+          name: node-22-sbom
+          path: node-sbom.spdx.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: CI summary
+        shell: bash
+        run: |
+          {
+            echo "## Node.js 22 CI"
+            echo
+            echo "- Dockerfile lint: passed"
+            echo "- Repository configuration scan: passed"
+            echo "- Image build: passed"
+            echo "- Container regression tests: passed"
+            echo "- Vulnerability scan: passed"
+            echo "- SBOM: generated"
+          } >> "${GITHUB_STEP_SUMMARY}"
