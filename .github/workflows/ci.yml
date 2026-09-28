@@ -54,6 +54,12 @@ jobs:
       - name: Validate metadata
         run: python scripts/validate_metadata.py
 
+      - name: Lint Debian Dockerfile
+        uses: hadolint/hadolint-action@v3.5.0
+        with:
+          dockerfile: images/base/debian/Dockerfile
+          failure-threshold: warning
+
       - name: Validate Debian container tests
         run: |
           docker buildx build \
