@@ -1,0 +1,356 @@
+name: Image Promotion Pipeline
+
+on:
+  workflow_dispatch:
+    inputs:
+      image:
+        description: Image to promote
+        required: true
+        type: choice
+        options:
+          - debian
+
+      version:
+        description: Release version
+        required: true
+        type: string
+        default: "13"
+
+      digest:
+        description: Immutable image digest, for example sha256:...
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository_owner }}/enterprise-hardened-debian
+
+jobs:
+  validate:
+    name: Validate promotion
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Validate required repository files
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          required_files=(
+            "images/base/debian/Dockerfile"
+            "metadata/debian.yaml"
+            "metadata/image.schema.json"
+            "tests/container/test-debian-base.sh"
+            "tests/container/test-image-policy.sh"
+            "tests/runtime/test-debian-runtime.sh"
+          )
+
+          for file in "${required_files[@]}"; do
+            if [[ ! -f "${file}" ]]; then
+              echo "FAIL: required file missing: ${file}"
+              exit 1
+            fi
+
+            echo "PASS: ${file}"
+          done
+
+          echo "PASS: required repository files exist"
+
+      - name: Validate digest
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          digest="${{ inputs.digest }}"
+
+          if [[ ! "${digest}" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+            echo "ERROR: invalid image digest"
+            exit 1
+          fi
+
+          echo "PASS: valid digest ${digest}"
+
+      - name: Validate version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          version="${{ inputs.version }}"
+
+          if [[ "${version}" == "latest" ]]; then
+            echo "ERROR: latest tag is not permitted"
+            exit 1
+          fi
+
+          if [[ ! "${version}" =~ ^[0-9]+$ ]]; then
+            echo "ERROR: version must be numeric"
+            exit 1
+          fi
+
+          echo "PASS: valid release version ${version}"
+
+      - name: Validate image selection
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "${{ inputs.image }}" != "debian" ]]; then
+            echo "ERROR: unsupported image '${{ inputs.image }}'"
+            exit 1
+          fi
+
+          echo "PASS: supported image '${{ inputs.image }}'"
+
+  staging:
+    name: Promote to staging
+    needs:
+      - validate
+
+    runs-on: ubuntu-latest
+
+    environment:
+      name: staging
+
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Verify source image signature
+        env:
+          IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ inputs.digest }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cosign verify \
+            --certificate-identity-regexp "^https://github.com/${{ github.repository }}/.github/workflows/image-release.yml@refs/heads/main$" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            "${IMAGE}"
+
+          echo "PASS: source image signature verified"
+
+      - name: Inspect source image
+        env:
+          IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ inputs.digest }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          docker buildx imagetools inspect "${IMAGE}"
+
+          echo "PASS: source image manifest is accessible"
+
+      - name: Promote digest to staging
+        env:
+          SOURCE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ inputs.digest }}
+          TARGET: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ inputs.version }}-staging
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          docker buildx imagetools create \
+            --tag "${TARGET}" \
+            "${SOURCE}"
+
+          echo "Promoted:"
+          echo "${SOURCE}"
+          echo "→"
+          echo "${TARGET}"
+
+      - name: Verify staging image
+        env:
+          SOURCE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ inputs.digest }}
+          TARGET: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ inputs.version }}-staging
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          source_digest="${{ inputs.digest }}"
+
+          docker buildx imagetools inspect "${TARGET}"
+
+          target_digest="$(
+            docker buildx imagetools inspect "${TARGET}" --format '{{json .Manifest.Digest}}'
+          )"
+
+          target_digest="${target_digest//\"/}"
+
+          if [[ "${target_digest}" != "${source_digest}" ]]; then
+            echo "FAIL: staging digest does not match source digest"
+            echo "Source:  ${source_digest}"
+            echo "Target:  ${target_digest}"
+            exit 1
+          fi
+
+          echo "PASS: staging points to the exact source digest"
+
+      - name: Verify staging signature
+        env:
+          IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ inputs.digest }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cosign verify \
+            --certificate-identity-regexp "^https://github.com/${{ github.repository }}/.github/workflows/image-release.yml@refs/heads/main$" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            "${IMAGE}"
+
+          echo "PASS: staging source remains signed"
+
+  production:
+    name: Promote to production
+    needs:
+      - staging
+
+    runs-on: ubuntu-latest
+
+    environment:
+      name: production
+
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Verify source image signature
+        env:
+          IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ inputs.digest }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cosign verify \
+            --certificate-identity-regexp "^https://github.com/${{ github.repository }}/.github/workflows/image-release.yml@refs/heads/main$" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            "${IMAGE}"
+
+          echo "PASS: source image signature verified"
+
+      - name: Verify staging image
+        env:
+          IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ inputs.version }}-staging
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          docker buildx imagetools inspect "${IMAGE}"
+
+          echo "PASS: staging image is accessible"
+
+      - name: Promote digest to production
+        env:
+          SOURCE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ inputs.digest }}
+          TARGET: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ inputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          docker buildx imagetools create \
+            --tag "${TARGET}" \
+            "${SOURCE}"
+
+          echo "Promoted:"
+          echo "${SOURCE}"
+          echo "→"
+          echo "${TARGET}"
+
+      - name: Verify production image
+        env:
+          SOURCE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ inputs.digest }}
+          TARGET: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ inputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          docker buildx imagetools inspect "${TARGET}"
+
+          source_digest="${{ inputs.digest }}"
+
+          target_digest="$(
+            docker buildx imagetools inspect "${TARGET}" --format '{{json .Manifest.Digest}}'
+          )"
+
+          target_digest="${target_digest//\"/}"
+
+          if [[ "${target_digest}" != "${source_digest}" ]]; then
+            echo "FAIL: production digest does not match source digest"
+            echo "Source: ${source_digest}"
+            echo "Target: ${target_digest}"
+            exit 1
+          fi
+
+          echo "PASS: production points to the exact source digest"
+
+      - name: Verify production signature
+        env:
+          IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ inputs.digest }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cosign verify \
+            --certificate-identity-regexp "^https://github.com/${{ github.repository }}/.github/workflows/image-release.yml@refs/heads/main$" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            "${IMAGE}"
+
+          echo "PASS: production source image signature verified"
+
+      - name: Production release summary
+        env:
+          IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ inputs.version }}
+          DIGEST: ${{ inputs.digest }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          {
+            echo "## Production Image Promotion"
+            echo
+            echo "- Image: \`${IMAGE}\`"
+            echo "- Version: \`${{ inputs.version }}\`"
+            echo "- Digest: \`${DIGEST}\`"
+            echo "- Platforms: \`linux/amd64, linux/arm64\`"
+            echo "- Promotion model: immutable digest"
+            echo "- Rebuild performed: no"
+            echo "- Source signature: verified"
+            echo "- Production digest: verified"
+          } >> "${GITHUB_STEP_SUMMARY}"
