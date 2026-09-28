@@ -65,7 +65,7 @@ jobs:
 
           echo "PASS: Python version ${version}"
 
-      - name: Validate Meetadata Version
+      - name: Validate Metadata Version
         shell: bash
         run: |
           set -euo pipefail
