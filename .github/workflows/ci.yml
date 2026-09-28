@@ -5,6 +5,7 @@ on:
     paths:
       - ".github/workflows/**"
       - "hardening/**"
+      - "images/**"
       - "metadata/**"
       - "policies/**"
       - "scripts/**"
@@ -17,6 +18,7 @@ on:
     paths:
       - ".github/workflows/**"
       - "hardening/**"
+      - "images/**"
       - "metadata/**"
       - "policies/**"
       - "scripts/**"
@@ -36,6 +38,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       - name: Setup Python
         uses: actions/setup-python@v7
@@ -44,6 +48,14 @@ jobs:
 
       - name: Validate metadata
         run: python scripts/validate_metadata.py
+
+      - name: Validate Debian container tests
+        run: |
+          docker buildx build \
+            --load \
+            --tag enterprise-hardened-debian:test \
+            images/base/debian
+          bash tests/container/test-debian-base.sh enterprise-hardened-debian:test
 
       - name: Check repository policy
         run: |
