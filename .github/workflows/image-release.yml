@@ -9,6 +9,7 @@ on:
         type: choice
         options:
           - debian
+
       version:
         description: Image version
         required: true
@@ -17,20 +18,25 @@ on:
 
 permissions:
   contents: read
+  packages: write
+  id-token: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository_owner }}/enterprise-hardened-debian
 
 jobs:
-  build:
-    name: Build release image
+  validate:
+    name: Validate release
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 10
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Validate release tag
+      - name: Validate release version
         shell: bash
         run: |
+          set -euo pipefail
+
           version="${{ inputs.version }}"
 
           if [[ "${version}" == "latest" ]]; then
@@ -46,18 +52,115 @@ jobs:
           echo "Release version: ${version}"
           echo "Release tag: ${version}.${GITHUB_RUN_NUMBER}"
 
+      - name: Validate repository
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          test -f images/base/debian/Dockerfile
+          test -f metadata/debian.yaml
+          test -f metadata/image.schema.json
+          test -f tests/container/test-debian-base.sh
+          test -f tests/container/test-image-policy.sh
+          test -f tests/runtime/test-debian-runtime.sh
+
+          echo "PASS: required release files exist"
+
+  release:
+    name: Build and sign Debian image
+    needs:
+      - validate
+
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
-      - name: Build Debian release image
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate image metadata
+        id: metadata
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=${{ inputs.version }}
+            type=raw,value=${{ inputs.version }}.${{ github.run_number }}
+
+      - name: Build and push Debian image
+        id: build
         uses: docker/build-push-action@v7
         with:
           context: .
           file: images/base/debian/Dockerfile
-          push: false
-          tags: |
-            enterprise-hardened-debian:${{ inputs.version }}
-            enterprise-hardened-debian:${{ inputs.version }}.${{ github.run_number }}
+          push: true
           platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.metadata.outputs.tags }}
+          labels: ${{ steps.metadata.outputs.labels }}
           provenance: true
           sbom: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Record immutable image reference
+        id: image
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          IMAGE="${REGISTRY}/${IMAGE_NAME}@${{ steps.build.outputs.digest }}"
+
+          echo "IMAGE=${IMAGE}" >> "${GITHUB_OUTPUT}"
+          echo "Digest: ${{ steps.build.outputs.digest }}"
+          echo "Immutable image: ${IMAGE}"
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v4
+
+      - name: Sign image
+        env:
+          IMAGE: ${{ steps.image.outputs.IMAGE }}
+        run: |
+          cosign sign --yes "${IMAGE}"
+
+      - name: Verify image signature
+        env:
+          IMAGE: ${{ steps.image.outputs.IMAGE }}
+        run: |
+          cosign verify \
+            --certificate-identity-regexp "^https://github.com/${{ github.repository }}/.github/workflows/image-release.yml@refs/heads/main$" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            "${IMAGE}"
+
+      - name: Release summary
+        env:
+          IMAGE: ${{ steps.image.outputs.IMAGE }}
+        shell: bash
+        run: |
+          {
+            echo "## Debian Image Release"
+            echo
+            echo "- Image: \`${REGISTRY}/${IMAGE_NAME}\`"
+            echo "- Version: \`${{ inputs.version }}\`"
+            echo "- Release tag: \`${{ inputs.version }}.${GITHUB_RUN_NUMBER}\`"
+            echo "- Platforms: \`linux/amd64, linux/arm64\`"
+            echo "- Digest: \`${{ steps.build.outputs.digest }}\`"
+            echo "- SBOM: enabled"
+            echo "- Provenance: enabled"
+            echo "- Cosign signing: enabled"
+            echo "- Signature verification: passed"
+            echo
+            echo "### Immutable reference"
+            echo
+            echo "\`${IMAGE}\`"
+          } >> "${GITHUB_STEP_SUMMARY}"
