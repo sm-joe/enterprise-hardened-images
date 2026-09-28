@@ -1,8 +1,5 @@
 #!/usr/bin/env bash
 
-shopt -s expand_aliases
-alias docker='podman'
-
 set -euo pipefail
 
 IMAGE="${1:?Usage: $0 <image>}"
