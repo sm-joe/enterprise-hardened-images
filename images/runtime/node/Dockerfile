@@ -2,6 +2,9 @@ FROM debian:13 AS node-source
 
 ARG NODE_VERSION=22.23.3
 
+# Builder-only packages are intentionally resolved from the current Debian 13
+# repository so security updates can be consumed without stale package pins.
+# hadolint ignore=DL3008
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         ca-certificates \
