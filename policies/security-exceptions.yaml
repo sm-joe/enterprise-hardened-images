@@ -1,0 +1,45 @@
+version: "1"
+
+exception_schema:
+  required:
+    - control_id
+    - image
+    - reason
+    - compensating_control
+    - owner
+    - approved_by
+    - created
+    - expires
+
+  fields:
+    control_id:
+      type: string
+      description: Security control ID from SECURITY-CONTROL-MATRIX.csv
+
+    image:
+      type: string
+      description: Image affected by the exception
+
+    reason:
+      type: string
+      description: Technical reason the control cannot currently be satisfied
+
+    compensating_control:
+      type: string
+      description: Alternative security measure that reduces the risk
+
+    owner:
+      type: string
+      description: Person or team responsible for the exception
+
+    approved_by:
+      type: string
+      description: Security or platform authority that approved the exception
+
+    created:
+      type: date
+      description: Date the exception was created
+
+    expires:
+      type: date
+      description: Date the exception expires or must be reviewed
