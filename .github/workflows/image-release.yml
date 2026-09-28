@@ -32,7 +32,7 @@ jobs:
     timeout-minutes: 10
 
     steps:
-      - name: Validate release version
+      - name: Validate Release Version
         shell: bash
         run: |
           set -euo pipefail
@@ -57,17 +57,28 @@ jobs:
         run: |
           set -euo pipefail
 
-          test -f images/base/debian/Dockerfile
-          test -f metadata/debian.yaml
-          test -f metadata/image.schema.json
-          test -f tests/container/test-debian-base.sh
-          test -f tests/container/test-image-policy.sh
-          test -f tests/runtime/test-debian-runtime.sh
+          required_files=(
+            "images/base/debian/Dockerfile"
+            "metadata/debian.yaml"
+            "metadata/image.schema.json"
+            "tests/container/test-debian-base.sh"
+            "tests/container/test-image-policy.sh"
+            "tests/runtime/test-debian-runtime.sh"
+          )
+
+          for file in "${required_files[@]}"; do
+            if [[ ! -f "${file}" ]]; then
+              echo "FAIL: required file missing: ${file}"
+              exit 1
+            fi
+
+            echo "PASS: ${file}"
+          done
 
           echo "PASS: required release files exist"
 
   release:
-    name: Build and sign Debian image
+    name: Build and Sign Debian Image
     needs:
       - validate
 
