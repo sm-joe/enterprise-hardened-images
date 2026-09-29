@@ -1,4 +1,4 @@
-name: Java 21 CI
+name: Java 21 CI Pipeline
 
 on:
   pull_request:
@@ -18,7 +18,7 @@ permissions:
 
 jobs:
   validate:
-    name: Validate Java 21 image
+    name: Validate Java 21 Image
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
