@@ -1,0 +1,19 @@
+name: nginx
+family: runtime
+version: "1.28"
+upstream: nginx
+base: ghcr.io/sm-joe/enterprise-hardened-debian:13
+
+architectures:
+  - linux/amd64
+  - linux/arm64
+
+user: 10001
+group: 10001
+
+security:
+  profile: cis-l1-aligned
+  non_root: true
+  sbom: true
+  provenance: true
+  signing: true

@@ -1,0 +1,160 @@
+name: Nginx 1.28 CI Pipeline
+
+on:
+  pull_request:
+    paths:
+      - "images/runtime/nginx/**"
+      - "metadata/nginx.yaml"
+      - "metadata/image.schema.json"
+      - "tests/container/test-nginx-base.sh"
+      - "hardening/**"
+      - "policies/**"
+      - ".github/workflows/nginx-ci.yml"
+
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate Nginx 1.28
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Validate Required Files
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          required_files=(
+            "images/runtime/nginx/Dockerfile"
+            "images/runtime/nginx/nginx.conf"
+            "metadata/nginx.yaml"
+            "metadata/image.schema.json"
+            "tests/container/test-nginx-base.sh"
+          )
+
+          for file in "${required_files[@]}"; do
+            if [[ ! -f "${file}" ]]; then
+              echo "FAIL: required file missing: ${file}"
+              exit 1
+            fi
+
+            echo "PASS: ${file}"
+          done
+
+      - name: Validate Nginx Metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          python3 - <<'PY'
+          import pathlib
+          import re
+
+          path = pathlib.Path("metadata/nginx.yaml")
+          text = path.read_text()
+
+          required = {
+              "name": "nginx",
+              "family": "runtime",
+              "version": "1.28",
+          }
+
+          for key, expected in required.items():
+              match = re.search(
+                  rf'^{re.escape(key)}:\s*"?([^"\n]+)"?\s*$',
+                  text,
+                  re.MULTILINE,
+              )
+
+              if not match:
+                  raise SystemExit(
+                      f"FAIL: missing metadata field: {key}"
+                  )
+
+              actual = match.group(1).strip()
+
+              if actual != expected:
+                  raise SystemExit(
+                      f"FAIL: {key}={actual!r}; expected {expected!r}"
+                  )
+
+          print("PASS: Nginx metadata is valid")
+          PY
+
+      - name: Lint Nginx Dockerfile
+        uses: hadolint/hadolint-action@v3.2.0
+        with:
+          dockerfile: images/runtime/nginx/Dockerfile
+          failure-threshold: warning
+
+      - name: Scan Repository Configuration
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          version: "v0.74.0"
+          scan-type: config
+          scan-ref: .
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+
+      - name: Build Nginx Image
+        run: |
+          docker build \
+            --tag enterprise-hardened-nginx:test \
+            images/runtime/nginx
+
+      - name: Inspect Nginx Image
+        run: |
+          docker image inspect enterprise-hardened-nginx:test
+
+      - name: Run Nginx Container Regression Tests
+        run: |
+          chmod +x tests/container/test-nginx-base.sh
+          tests/container/test-nginx-base.sh enterprise-hardened-nginx:test
+
+      - name: Scan Nginx Image
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          version: "v0.74.0"
+          image-ref: enterprise-hardened-nginx:test
+          format: table
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
+
+      - name: Generate Nginx SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          image: enterprise-hardened-nginx:test
+          format: spdx-json
+          output-file: nginx-sbom.spdx.json
+          artifact-name: nginx-sbom.spdx.json
+
+      - name: Upload Nginx SBOM
+        uses: actions/upload-artifact@v7
+        with:
+          name: nginx-1.28-sbom
+          path: nginx-sbom.spdx.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Write CI Summary
+        shell: bash
+        run: |
+          {
+            echo "## Nginx 1.28 CI"
+            echo
+            echo "- Dockerfile lint: passed"
+            echo "- Repository configuration scan: passed"
+            echo "- Image build: passed"
+            echo "- Container regression tests: passed"
+            echo "- Vulnerability scan: passed"
+            echo "- SBOM: generated"
+          } >> "${GITHUB_STEP_SUMMARY}"
