@@ -8,12 +8,12 @@ CTRL-006,Capabilities,Drop unnecessary Linux capabilities,Runtime,Required,Runti
 CTRL-007,Filesystem,Read-only root filesystem compatible,Runtime,Target,Runtime test,Application writes only approved paths,Fail when target requires it
 CTRL-008,Filesystem,Sensitive filesystem permissions restricted,Image,Required,Filesystem test,No world-writable sensitive paths,Fail
 CTRL-009,Filesystem,Temporary and cache data minimized,Image,Required,Build inspection,No package-manager cache,Fail
-CTRL-010,Packages,Minimal package footprint,Image,Required,Package inventory,Only documented runtime/build packages,Fail
+CTRL-010,Packages,Minimal package footprint,Image,Required,Package inventory and container footprint tests,Only documented runtime/build packages,Fail
 CTRL-011,Packages,No unnecessary network/debug tools,Image,Required,Package inventory,curl/wget/ssh/etc. absent unless justified,Fail
 CTRL-012,Packages,Package manager metadata cleaned,Image,Required,Filesystem test,No stale package lists/cache,Fail
 CTRL-013,Secrets,No secrets in image layers,Build,Required,Secret scanner,Zero confirmed secrets,Fail
 CTRL-014,Secrets,No credentials in environment defaults,Image,Required,Image config test,No static credentials or tokens,Fail
-CTRL-015,Supply Chain,Pinned base image release,Build,Required,Metadata validation,Explicit upstream version,Fail
+CTRL-015,Supply Chain,Pinned base image release,Build,Required,Dockerfile release-tag validation,Explicit upstream version,Fail
 CTRL-016,Supply Chain,SBOM generated,Artifact,Required,BuildKit attestation,SPDX or CycloneDX available,Fail
 CTRL-017,Supply Chain,Build provenance generated,Artifact,Required,BuildKit attestation,Provenance attestation available,Fail
 CTRL-018,Supply Chain,Image cryptographically signed,Artifact,Required,Cosign verification,Valid signature,Fail

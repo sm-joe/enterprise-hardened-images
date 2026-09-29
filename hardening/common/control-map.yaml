@@ -1,112 +1,145 @@
 controls:
+
   CTRL-001:
+    status: complete
     implementation_layer: common
     description: Run as non-root
 
   CTRL-002:
+    status: complete
     implementation_layer: common
     description: Dedicated non-root group
 
   CTRL-003:
+    status: complete
     implementation_layer: common
     description: No sudo
 
   CTRL-004:
+    status: complete
     implementation_layer: common
     description: No unnecessary setuid/setgid binaries
 
   CTRL-005:
+    status: complete
     implementation_layer: runtime
     description: Privilege escalation disabled
 
   CTRL-006:
+    status: complete
     implementation_layer: runtime
     description: Drop unnecessary Linux capabilities
 
   CTRL-007:
+    status: complete
     implementation_layer: runtime
     description: Read-only root filesystem compatibility
 
   CTRL-008:
+    status: complete
     implementation_layer: common
     description: Sensitive filesystem permissions restricted
 
   CTRL-009:
+    status: complete
     implementation_layer: common
     description: Temporary and cache data minimized
 
   CTRL-010:
-    implementation_layer: distribution
-    description: Minimal package footprint
+    status: complete
+    evidence:
+      - tests/container/test-debian-base.sh
+      - tests/container/test-python-base.sh
+      - tests/container/test-node-base.sh
+      - tests/container/test-java-base.sh
+      - tests/container/test-nginx-base.sh
 
   CTRL-011:
+    status: complete
     implementation_layer: distribution
     description: No unnecessary network/debug tools
 
   CTRL-012:
+    status: complete
     implementation_layer: distribution
     description: Package manager metadata cleaned
 
   CTRL-013:
+    status: complete
     implementation_layer: build
     description: No secrets in image layers
 
   CTRL-014:
-    implementation_layer: image
-    description: No credentials in environment defaults
+    status: complete
+    evidence:
+      - tests/container/test-image-policy.sh
 
   CTRL-015:
-    implementation_layer: metadata
-    description: Pinned base image release
+    status: complete
+    evidence:
+      - tests/cis/test-base-image-release.sh
 
   CTRL-016:
+    status: complete
     implementation_layer: build
     description: SBOM generated
 
   CTRL-017:
+    status: complete
     implementation_layer: build
     description: Build provenance generated
 
   CTRL-018:
+    status: complete
     implementation_layer: release
     description: Image cryptographically signed
 
   CTRL-019:
+    status: complete
     implementation_layer: build
     description: Multi-architecture build
 
   CTRL-020:
+    status: complete
     implementation_layer: security
     description: Critical vulnerabilities blocked
 
   CTRL-021:
+    status: complete
     implementation_layer: security
     description: High vulnerabilities governed
 
   CTRL-022:
+    status: complete
     implementation_layer: source
     description: Dockerfile linting
 
   CTRL-023:
+    status: complete
     implementation_layer: source
     description: Infrastructure and security static analysis
 
   CTRL-024:
+    status: complete
     implementation_layer: runtime
     description: Image smoke test
 
   CTRL-025:
+    status: complete
     implementation_layer: runtime
     description: Security regression test
 
   CTRL-026:
+    status: complete
     implementation_layer: lifecycle
     description: Upstream update detection
 
   CTRL-027:
+    status: complete
     implementation_layer: lifecycle
     description: CVE-triggered rebuild
 
   CTRL-028:
+    status: complete
     implementation_layer: governance
     description: Security exceptions documented
