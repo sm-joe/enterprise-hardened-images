@@ -144,6 +144,22 @@ echo "PASS: unnecessary tools absent"
 '
 
 echo
+echo "== Package footprint =="
+
+docker run --rm "${IMAGE}" sh -c '
+if dpkg-query -W -f="${Package}\n" 2>/dev/null \
+    | grep -Eq "^(curl|wget|openssh|git|vim|nano|gcc|make|netcat|telnet|ftp|openjdk-.*-jdk.*)$"; then
+
+    echo "FAIL: unexpected package found in Java runtime image"
+    dpkg-query -W -f="${Package}\n" 2>/dev/null \
+        | grep -E "^(curl|wget|openssh|git|vim|nano|gcc|make|netcat|telnet|ftp|openjdk-.*-jdk.*)$"
+    exit 1
+fi
+
+echo "PASS: Java runtime package footprint is minimal"
+'
+
+echo
 echo "== Read-only root filesystem =="
 
 docker run --rm \

@@ -221,6 +221,22 @@ echo "PASS: unnecessary tools absent"
 '
 
 echo
+echo "== Package footprint =="
+
+docker run --rm "${IMAGE}" sh -c '
+if dpkg-query -W -f="${Package}\n" 2>/dev/null \
+    | grep -Eq "^(curl|wget|openssh|git|vim|nano|gcc|make|netcat|telnet|ftp|gnupg|gpg|gpg-agent|dirmngr)$"; then
+
+    echo "FAIL: unexpected package found in Nginx runtime image"
+    dpkg-query -W -f="${Package}\n" 2>/dev/null \
+        | grep -E "^(curl|wget|openssh|git|vim|nano|gcc|make|netcat|telnet|ftp|gnupg|gpg|gpg-agent|dirmngr)$"
+    exit 1
+fi
+
+echo "PASS: Nginx runtime package footprint is minimal"
+'
+
+echo
 echo "== Nginx process configuration =="
 
 docker run --rm "${IMAGE}" sh -c '

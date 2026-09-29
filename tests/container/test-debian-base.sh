@@ -69,6 +69,18 @@ docker run --rm "${IMAGE}" sh -c '
 '
 
 echo
+echo "== Package footprint =="
+docker run --rm "${IMAGE}" sh -c '
+    if dpkg-query -W -f="${Package}\n" 2>/dev/null | grep -Eq "^(curl|wget|openssh|git|vim|nano|gcc|make|netcat|telnet|ftp)$"; then
+        echo "FAIL: unexpected package found in Debian base image"
+        dpkg-query -W -f="${Package}\n" 2>/dev/null \
+            | grep -E "^(curl|wget|openssh|git|vim|nano|gcc|make|netcat|telnet|ftp)$"
+        exit 1
+    fi
+    echo "PASS: Debian base package footprint is minimal"
+'
+
+echo
 echo "== APT metadata =="
 docker run --rm "${IMAGE}" sh -c '
     if find /var/lib/apt/lists -type f -print -quit 2>/dev/null | grep -q .; then
