@@ -1,0 +1,291 @@
+name: Nginx 1.28 Promotion Pipeline
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Nginx image version"
+        required: true
+        default: "1.28"
+        type: string
+
+      digest:
+        description: "Signed source image digest (sha256:...)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository_owner }}/enterprise-hardened-nginx
+
+jobs:
+  validate:
+    name: Validate Input
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Validate Version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "${{ inputs.version }}" != "1.28" ]]; then
+            echo "FAIL: only Nginx version 1.28 is supported"
+            exit 1
+          fi
+
+          echo "PASS: Nginx version 1.28"
+
+      - name: Validate Digest
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          DIGEST="${{ inputs.digest }}"
+
+          if [[ ! "${DIGEST}" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+            echo "FAIL: invalid image digest: ${DIGEST}"
+            echo "Expected format: sha256:<64 hexadecimal characters>"
+            exit 1
+          fi
+
+          echo "PASS: valid image digest"
+
+      - name: Validate Source Reference
+        run: |
+          echo "Source image:"
+          echo "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ inputs.digest }}"
+
+  staging:
+    name: Promote Staging
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Setup Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Login To GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v4.1.2
+
+      - name: Verify Source Signature
+        run: |
+          set -euo pipefail
+
+          SOURCE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ inputs.digest }}"
+
+          cosign verify \
+            --certificate-identity-regexp "^https://github.com/${{ github.repository }}/.github/workflows/nginx-release.yml@refs/heads/main$" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            "${SOURCE}"
+
+      - name: Verify Source Digest
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          SOURCE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ inputs.digest }}"
+
+          RESOLVED_DIGEST="$(
+            docker buildx imagetools inspect \
+              --format '{{json .Manifest.Digest}}' \
+              "${SOURCE}" \
+              | tr -d '"'
+          )"
+
+          if [[ "${RESOLVED_DIGEST}" != "${{ inputs.digest }}" ]]; then
+            echo "FAIL: source digest does not match requested digest"
+            echo "Expected: ${{ inputs.digest }}"
+            echo "Actual:   ${RESOLVED_DIGEST}"
+            exit 1
+          fi
+
+          echo "PASS: source digest verified"
+
+      - name: Promote To Staging
+        run: |
+          set -euo pipefail
+
+          SOURCE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ inputs.digest }}"
+          TARGET="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ inputs.version }}-staging"
+
+          docker buildx imagetools create \
+            --tag "${TARGET}" \
+            "${SOURCE}"
+
+      - name: Verify Staging Digest
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          TARGET="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ inputs.version }}-staging"
+
+          STAGING_DIGEST="$(
+            docker buildx imagetools inspect \
+              --format '{{json .Manifest.Digest}}' \
+              "${TARGET}" \
+              | tr -d '"'
+          )"
+
+          if [[ "${STAGING_DIGEST}" != "${{ inputs.digest }}" ]]; then
+            echo "FAIL: staging digest does not match source digest"
+            echo "Expected: ${{ inputs.digest }}"
+            echo "Actual:   ${STAGING_DIGEST}"
+            exit 1
+          fi
+
+          echo "PASS: staging digest matches source digest"
+
+      - name: Verify Staging Signature
+        run: |
+          set -euo pipefail
+
+          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ inputs.digest }}"
+
+          cosign verify \
+            --certificate-identity-regexp "^https://github.com/${{ github.repository }}/.github/workflows/nginx-release.yml@refs/heads/main$" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            "${IMAGE}"
+
+      - name: Write Staging Summary
+        run: |
+          {
+            echo "## Nginx 1.28 Staging Promotion"
+            echo
+            echo "- Source: \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ inputs.digest }}\`"
+            echo "- Target: \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ inputs.version }}-staging\`"
+            echo "- Digest: \`${{ inputs.digest }}\`"
+            echo "- Source signature: verified"
+            echo "- Staging digest: verified"
+            echo "- Staging signature: verified"
+            echo "- Rebuild: no"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+  production:
+    name: Promote Production
+    needs: staging
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    environment:
+      name: production
+
+    steps:
+      - name: Setup Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Login To GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v4.1.2
+
+      - name: Verify Staging Digest
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          STAGING="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ inputs.version }}-staging"
+
+          STAGING_DIGEST="$(
+            docker buildx imagetools inspect \
+              --format '{{json .Manifest.Digest}}' \
+              "${STAGING}" \
+              | tr -d '"'
+          )"
+
+          if [[ "${STAGING_DIGEST}" != "${{ inputs.digest }}" ]]; then
+            echo "FAIL: staging digest changed"
+            echo "Expected: ${{ inputs.digest }}"
+            echo "Actual:   ${STAGING_DIGEST}"
+            exit 1
+          fi
+
+          echo "PASS: staging digest verified"
+
+      - name: Verify Staging Signature
+        run: |
+          set -euo pipefail
+
+          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ inputs.digest }}"
+
+          cosign verify \
+            --certificate-identity-regexp "^https://github.com/${{ github.repository }}/.github/workflows/nginx-release.yml@refs/heads/main$" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            "${IMAGE}"
+
+      - name: Promote To Production
+        run: |
+          set -euo pipefail
+
+          SOURCE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ inputs.digest }}"
+          TARGET="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ inputs.version }}"
+
+          docker buildx imagetools create \
+            --tag "${TARGET}" \
+            "${SOURCE}"
+
+      - name: Verify Production Digest
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          TARGET="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ inputs.version }}"
+
+          PRODUCTION_DIGEST="$(
+            docker buildx imagetools inspect \
+              --format '{{json .Manifest.Digest}}' \
+              "${TARGET}" \
+              | tr -d '"'
+          )"
+
+          if [[ "${PRODUCTION_DIGEST}" != "${{ inputs.digest }}" ]]; then
+            echo "FAIL: production digest does not match source digest"
+            echo "Expected: ${{ inputs.digest }}"
+            echo "Actual:   ${PRODUCTION_DIGEST}"
+            exit 1
+          fi
+
+          echo "PASS: production digest matches source digest"
+
+      - name: Verify Production Signature
+        run: |
+          set -euo pipefail
+
+          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ inputs.digest }}"
+
+          cosign verify \
+            --certificate-identity-regexp "^https://github.com/${{ github.repository }}/.github/workflows/nginx-release.yml@refs/heads/main$" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            "${IMAGE}"
+
+      - name: Write Production Summary
+        run: |
+          {
+            echo "## Nginx 1.28 Production Promotion"
+            echo
+            echo "- Source: \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ inputs.digest }}\`"
+            echo "- Target: \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ inputs.version }}\`"
+            echo "- Digest: \`${{ inputs.digest }}\`"
+            echo "- Production digest: verified"
+            echo "- Production signature: verified"
+            echo "- Rebuild: no"
+          } >> "${GITHUB_STEP_SUMMARY}"

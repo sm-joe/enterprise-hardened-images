@@ -1,0 +1,306 @@
+name: Nginx 1.28 Release Pipeline
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Nginx image version"
+        required: true
+        default: "1.28"
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository_owner }}/enterprise-hardened-nginx
+
+jobs:
+  validate:
+    name: Validate Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Validate Required Files
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          required_files=(
+            "images/runtime/nginx/Dockerfile"
+            "images/runtime/nginx/nginx.conf"
+            "metadata/nginx.yaml"
+            "metadata/image.schema.json"
+            "tests/container/test-nginx-base.sh"
+          )
+
+          for file in "${required_files[@]}"; do
+            if [[ ! -f "${file}" ]]; then
+              echo "FAIL: required file missing: ${file}"
+              exit 1
+            fi
+
+            echo "PASS: ${file}"
+          done
+
+      - name: Validate Version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "${{ inputs.version }}" != "1.28" ]]; then
+            echo "FAIL: only Nginx version 1.28 is supported"
+            exit 1
+          fi
+
+          echo "PASS: Nginx version 1.28"
+
+      - name: Validate Metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          python3 - <<'PY'
+          import pathlib
+          import re
+
+          path = pathlib.Path("metadata/nginx.yaml")
+          text = path.read_text()
+
+          required = {
+              "name": "nginx",
+              "family": "runtime",
+              "version": "1.28",
+          }
+
+          for key, expected in required.items():
+              match = re.search(
+                  rf'^{re.escape(key)}:\s*"?([^"\n]+)"?\s*$',
+                  text,
+                  re.MULTILINE,
+              )
+
+              if not match:
+                  raise SystemExit(
+                      f"FAIL: missing metadata field: {key}"
+                  )
+
+              actual = match.group(1).strip()
+
+              if actual != expected:
+                  raise SystemExit(
+                      f"FAIL: {key}={actual!r}; expected {expected!r}"
+                  )
+
+          print("PASS: Nginx metadata is valid")
+          PY
+
+  build:
+    name: Build And Publish
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup QEMU
+        uses: docker/setup-qemu-action@v4
+
+      - name: Setup Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Login To GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build And Publish
+        uses: docker/build-push-action@v7
+        with:
+          context: images/runtime/nginx
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ inputs.version }}
+          sbom: true
+          provenance: true
+
+      - name: Inspect Published Image
+        run: |
+          docker buildx imagetools inspect \
+            "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ inputs.version }}"
+
+  sign:
+    name: Sign Image
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v4
+
+      - name: Login To GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve Image Digest
+        id: digest
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ inputs.version }}"
+
+          DIGEST="$(
+            docker buildx imagetools inspect \
+              --format '{{json .Manifest.Digest}}' \
+              "${IMAGE}" \
+              | tr -d '"'
+          )"
+
+          if [[ -z "${DIGEST}" || "${DIGEST}" == "null" ]]; then
+            echo "FAIL: unable to resolve image digest"
+            exit 1
+          fi
+
+          echo "digest=${DIGEST}" >> "${GITHUB_OUTPUT}"
+          echo "Published digest: ${DIGEST}"
+
+      - name: Sign Image
+        env:
+          IMAGE_DIGEST: ${{ steps.digest.outputs.digest }}
+        run: |
+          set -euo pipefail
+
+          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${IMAGE_DIGEST}"
+
+          cosign sign \
+            --yes \
+            "${IMAGE}"
+
+      - name: Verify Signature
+        env:
+          IMAGE_DIGEST: ${{ steps.digest.outputs.digest }}
+        run: |
+          set -euo pipefail
+
+          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${IMAGE_DIGEST}"
+
+          cosign verify \
+            --certificate-identity-regexp "^https://github.com/${{ github.repository }}/.github/workflows/nginx-release.yml@refs/heads/main$" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            "${IMAGE}"
+
+      - name: Write Release Summary
+        env:
+          IMAGE_DIGEST: ${{ steps.digest.outputs.digest }}
+        run: |
+          {
+            echo "## Nginx 1.28 Release"
+            echo
+            echo "- Image: \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ inputs.version }}\`"
+            echo "- Digest: \`${IMAGE_DIGEST}\`"
+            echo "- Architectures: \`linux/amd64\`, \`linux/arm64\`"
+            echo "- SBOM: generated"
+            echo "- Provenance: generated"
+            echo "- Cosign signature: verified"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+  verify:
+    name: Verify Release
+    needs: sign
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Setup Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Login To GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Inspect Manifest
+        run: |
+          set -euo pipefail
+
+          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ inputs.version }}"
+
+          docker buildx imagetools inspect "${IMAGE}"
+
+      - name: Resolve Release Digest
+        id: digest
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ inputs.version }}"
+
+          DIGEST="$(
+            docker buildx imagetools inspect \
+              --format '{{json .Manifest.Digest}}' \
+              "${IMAGE}" \
+              | tr -d '"'
+          )"
+
+          if [[ -z "${DIGEST}" || "${DIGEST}" == "null" ]]; then
+            echo "FAIL: unable to resolve release digest"
+            exit 1
+          fi
+
+          echo "digest=${DIGEST}" >> "${GITHUB_OUTPUT}"
+
+      - name: Verify Image Digest
+        env:
+          IMAGE_DIGEST: ${{ steps.digest.outputs.digest }}
+        run: |
+          set -euo pipefail
+
+          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ inputs.version }}"
+
+          RESOLVED_DIGEST="$(
+            docker buildx imagetools inspect \
+              --format '{{json .Manifest.Digest}}' \
+              "${IMAGE}" \
+              | tr -d '"'
+          )"
+
+          if [[ "${RESOLVED_DIGEST}" != "${IMAGE_DIGEST}" ]]; then
+            echo "FAIL: image digest changed during verification"
+            echo "Expected: ${IMAGE_DIGEST}"
+            echo "Actual:   ${RESOLVED_DIGEST}"
+            exit 1
+          fi
+
+          echo "PASS: release digest verified: ${IMAGE_DIGEST}"
+
+      - name: Write Verification Summary
+        env:
+          IMAGE_DIGEST: ${{ steps.digest.outputs.digest }}
+        run: |
+          {
+            echo "## Nginx 1.28 Release Verification"
+            echo
+            echo "- Image: \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ inputs.version }}\`"
+            echo "- Digest: \`${IMAGE_DIGEST}\`"
+            echo "- Manifest: verified"
+            echo "- Digest stability: verified"
+          } >> "${GITHUB_STEP_SUMMARY}"
