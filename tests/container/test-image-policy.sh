@@ -55,6 +55,45 @@ for key, expected in required.items():
 '
 
 echo
+echo "== Credential environment defaults =="
+
+printf '%s' "${CONFIG}" | python -c '
+import json
+import sys
+
+data = json.load(sys.stdin)[0]
+environment = data["Config"].get("Env") or []
+
+blocked = {
+    "AWS_ACCESS_KEY_ID",
+    "AWS_SECRET_ACCESS_KEY",
+    "AWS_SESSION_TOKEN",
+    "AWS_SECURITY_TOKEN",
+    "AWS_PROFILE",
+    "AWS_DEFAULT_PROFILE",
+    "GOOGLE_APPLICATION_CREDENTIALS",
+    "AZURE_CLIENT_ID",
+    "AZURE_CLIENT_SECRET",
+    "AZURE_TENANT_ID",
+    "AZURE_SUBSCRIPTION_ID",
+    "GITHUB_TOKEN",
+    "GH_TOKEN",
+    "NPM_TOKEN",
+    "NODE_AUTH_TOKEN",
+    "DOCKER_AUTH_CONFIG",
+}
+
+for entry in environment:
+    name = entry.split("=", 1)[0]
+
+    if name in blocked:
+        print(f"FAIL: credential-related environment variable is defined: {name}")
+        sys.exit(1)
+
+print("PASS: no credential-related environment defaults")
+'
+
+echo
 echo "== Healthcheck =="
 
 printf '%s' "${CONFIG}" | python -c '
