@@ -10,6 +10,7 @@ on:
       - "images/runtime/java/**"
       - "images/runtime/nginx/**"
       - ".github/workflows/integration-ci.yml"
+      - "tests/integration/test-runtime-security.sh"
 
   workflow_dispatch:
 
@@ -81,6 +82,22 @@ jobs:
           chmod +x tests/integration/nginx/test-nginx-app.sh
           tests/integration/nginx/test-nginx-app.sh
 
+  runtime-security:
+    name: Test Runtime Security
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Run Runtime Security Tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x tests/integration/test-runtime-security.sh
+          tests/integration/test-runtime-security.sh
+
   integration-summary:
     name: Validate Integration Results
     runs-on: ubuntu-latest
@@ -89,6 +106,7 @@ jobs:
       - node
       - java
       - nginx
+      - runtime-security
 
     steps:
       - name: Write Integration Summary
@@ -101,6 +119,7 @@ jobs:
             echo "- Node.js application: passed"
             echo "- Java application: passed"
             echo "- Nginx application: passed"
+            echo "- Runtime security regression: passed"
             echo
             echo "All applications ran successfully using hardened runtime settings."
             echo
@@ -109,5 +128,7 @@ jobs:
             echo "- Read-only root filesystem"
             echo "- All Linux capabilities dropped"
             echo "- no-new-privileges enabled"
-            echo "- Writable /tmp supplied explicitly"
+            echo "- Explicit writable /tmp"
+            echo "- Protected system filesystems"
+            echo "- No SUID/SGID binaries"
           } >> "${GITHUB_STEP_SUMMARY}"
