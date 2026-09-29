@@ -1,0 +1,35 @@
+images:
+  - name: debian
+    image: ghcr.io/sm-joe/enterprise-hardened-debian
+    version: "13"
+    dockerfile: images/runtime/debian/Dockerfile
+    release_workflow: image-release.yml
+    lifecycle: upstream-base
+
+  - name: python
+    image: ghcr.io/sm-joe/enterprise-hardened-python
+    version: "3.13"
+    dockerfile: images/runtime/python/Dockerfile
+    release_workflow: python-release.yml
+    lifecycle: debian-runtime
+
+  - name: node
+    image: ghcr.io/sm-joe/enterprise-hardened-node
+    version: "22"
+    dockerfile: images/runtime/node/Dockerfile
+    release_workflow: node-release.yml
+    lifecycle: upstream-version
+
+  - name: java
+    image: ghcr.io/sm-joe/enterprise-hardened-java
+    version: "21"
+    dockerfile: images/runtime/java/Dockerfile
+    release_workflow: java-release.yml
+    lifecycle: debian-runtime
+
+  - name: nginx
+    image: ghcr.io/sm-joe/enterprise-hardened-nginx
+    version: "1.28"
+    dockerfile: images/runtime/nginx/Dockerfile
+    release_workflow: nginx-release.yml
+    lifecycle: upstream-version
