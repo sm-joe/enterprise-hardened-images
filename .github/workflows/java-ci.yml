@@ -1,15 +1,15 @@
-name: Node.js 22 CI Pipeline
+name: Java 21 CI
 
 on:
   pull_request:
     paths:
-      - "images/runtime/node/**"
-      - "metadata/node.yaml"
+      - "images/runtime/java/**"
+      - "metadata/java.yaml"
       - "metadata/image.schema.json"
-      - "tests/container/test-node-base.sh"
+      - "tests/container/test-java-base.sh"
       - "hardening/**"
       - "policies/**"
-      - ".github/workflows/node-ci.yml"
+      - ".github/workflows/java-ci.yml"
 
   workflow_dispatch:
 
@@ -18,7 +18,7 @@ permissions:
 
 jobs:
   validate:
-    name: Validate Node.js Image
+    name: Validate Java 21 image
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -32,10 +32,10 @@ jobs:
           set -euo pipefail
 
           required_files=(
-            "images/runtime/node/Dockerfile"
-            "metadata/node.yaml"
+            "images/runtime/java/Dockerfile"
+            "metadata/java.yaml"
             "metadata/image.schema.json"
-            "tests/container/test-node-base.sh"
+            "tests/container/test-java-base.sh"
           )
 
           for file in "${required_files[@]}"; do
@@ -47,7 +47,7 @@ jobs:
             echo "PASS: ${file}"
           done
 
-      - name: Validate Node Metadata
+      - name: Validate Java Metadata
         shell: bash
         run: |
           set -euo pipefail
@@ -56,13 +56,13 @@ jobs:
           import pathlib
           import re
 
-          path = pathlib.Path("metadata/node.yaml")
+          path = pathlib.Path("metadata/java.yaml")
           text = path.read_text()
 
           required = {
-              "name": "node",
+              "name": "java",
               "family": "runtime",
-              "version": "22",
+              "version": "21",
           }
 
           for key, expected in required.items():
@@ -84,13 +84,13 @@ jobs:
                       f"FAIL: {key}={actual!r}; expected {expected!r}"
                   )
 
-          print("PASS: Node metadata is valid")
+          print("PASS: Java metadata is valid")
           PY
 
-      - name: Lint Node Dockerfile
-        uses: hadolint/hadolint-action@v3.5.0
+      - name: Lint Java Dockerfile
+        uses: hadolint/hadolint-action@v3.2.0
         with:
-          dockerfile: images/runtime/node/Dockerfile
+          dockerfile: images/runtime/java/Dockerfile
           failure-threshold: warning
 
       - name: Scan Repository Configuration
@@ -103,52 +103,52 @@ jobs:
           ignore-unfixed: true
           exit-code: "1"
 
-      - name: Build Node.js Image
+      - name: Build Java Image
         run: |
           docker build \
-            --tag enterprise-hardened-node:test \
-            images/runtime/node
+            --tag enterprise-hardened-java:test \
+            images/runtime/java
 
-      - name: Inspect Node.js Image
+      - name: Inspect Java Image
         run: |
-          docker image inspect enterprise-hardened-node:test
+          docker image inspect enterprise-hardened-java:test
 
-      - name: Run Node.js Container Regression Tests
+      - name: Run Java Container Regression Tests
         run: |
-          chmod +x tests/container/test-node-base.sh
-          tests/container/test-node-base.sh enterprise-hardened-node:test
+          chmod +x tests/container/test-java-base.sh
+          tests/container/test-java-base.sh enterprise-hardened-java:test
 
-      - name: Scan Node.js Image
+      - name: Scan Java Image
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           version: "v0.74.0"
-          image-ref: enterprise-hardened-node:test
+          image-ref: enterprise-hardened-java:test
           format: table
           severity: CRITICAL,HIGH
           ignore-unfixed: true
           exit-code: "1"
 
-      - name: Generate Node.js SBOM
+      - name: Generate Java SBOM
         uses: anchore/sbom-action@v0
         with:
-          image: enterprise-hardened-node:test
+          image: enterprise-hardened-java:test
           format: spdx-json
-          output-file: node-sbom.spdx.json
-          artifact-name: node-sbom.spdx.json
+          output-file: java-sbom.spdx.json
+          artifact-name: java-sbom.spdx.json
 
-      - name: Upload Node.js SBOM
+      - name: Upload Java SBOM
         uses: actions/upload-artifact@v6
         with:
-          name: node-22-sbom
-          path: node-sbom.spdx.json
+          name: java-21-sbom
+          path: java-sbom.spdx.json
           if-no-files-found: error
           retention-days: 30
 
-      - name: CI summary
+      - name: CI Summary
         shell: bash
         run: |
           {
-            echo "## Node.js 22 CI"
+            echo "## Java 21 CI"
             echo
             echo "- Dockerfile lint: passed"
             echo "- Repository configuration scan: passed"
