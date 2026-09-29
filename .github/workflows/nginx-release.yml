@@ -9,6 +9,12 @@ on:
         default: "1.28"
         type: string
 
+      upstream_version:
+        description: "Optional Nginx 1.28 upstream package version"
+        required: false
+        default: ""
+        type: string
+
 permissions:
   contents: read
   packages: write
@@ -23,6 +29,9 @@ jobs:
     name: Validate Release
     runs-on: ubuntu-latest
     timeout-minutes: 10
+
+    outputs:
+      nginx-build-version: ${{ steps.resolve-nginx-version.outputs.nginx-build-version }}
 
     steps:
       - name: Checkout
@@ -61,6 +70,26 @@ jobs:
           fi
 
           echo "PASS: Nginx version 1.28"
+
+      - name: Validate Upstream Version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          upstream_version="${{ inputs.upstream_version }}"
+
+          if [[ -z "${upstream_version}" ]]; then
+            echo "PASS: no upstream override supplied"
+            exit 0
+          fi
+
+          if [[ ! "${upstream_version}" =~ ^1\.28\.[0-9]+-1~trixie$ ]]; then
+            echo "FAIL: invalid Nginx upstream version: ${upstream_version}"
+            echo "Expected format: 1.28.x-1~trixie"
+            exit 1
+          fi
+
+          echo "PASS: Nginx upstream version ${upstream_version}"
 
       - name: Validate Metadata
         shell: bash
@@ -102,6 +131,36 @@ jobs:
           print("PASS: Nginx metadata is valid")
           PY
 
+      - name: Resolve Nginx Build Version
+        id: resolve-nginx-version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ -n "${{ inputs.upstream_version }}" ]]; then
+            nginx_build_version="${{ inputs.upstream_version }}"
+          else
+            nginx_build_version="$(
+              sed -n 's/^ARG NGINX_VERSION=\(.*\)$/\1/p' \
+                images/runtime/nginx/Dockerfile \
+                | head -n 1
+            )"
+          fi
+
+          if [[ -z "${nginx_build_version}" ]]; then
+            echo "FAIL: unable to resolve Nginx build version"
+            exit 1
+          fi
+
+          if [[ ! "${nginx_build_version}" =~ ^1\.28\.[0-9]+-1~trixie$ ]]; then
+            echo "FAIL: resolved invalid Nginx build version: ${nginx_build_version}"
+            exit 1
+          fi
+
+          echo "nginx-build-version=${nginx_build_version}" >> "${GITHUB_OUTPUT}"
+
+          echo "Nginx build version: ${nginx_build_version}"
+
   build:
     name: Build And Publish
     needs: validate
@@ -133,6 +192,8 @@ jobs:
           push: true
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ inputs.version }}
+          build-args: |
+            NGINX_VERSION=${{ needs.validate.outputs.nginx-build-version }}
           sbom: true
           provenance: true
 

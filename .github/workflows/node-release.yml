@@ -9,6 +9,12 @@ on:
         type: string
         default: "22"
 
+      upstream_version:
+        description: Optional Node.js 22 upstream patch version
+        required: false
+        type: string
+        default: ""
+
 permissions:
   contents: read
   packages: write
@@ -24,6 +30,9 @@ jobs:
     name: Validate Node.js Release
     runs-on: ubuntu-latest
     timeout-minutes: 10
+
+    outputs:
+      node-build-version: ${{ steps.resolve-node-version.outputs.node-build-version }}
 
     steps:
       - name: Checkout
@@ -67,6 +76,26 @@ jobs:
 
           echo "PASS: Node.js release version ${version}"
 
+      - name: Validate Upstream Version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          upstream_version="${{ inputs.upstream_version }}"
+
+          if [[ -z "${upstream_version}" ]]; then
+            echo "PASS: no upstream override supplied"
+            exit 0
+          fi
+
+          if [[ ! "${upstream_version}" =~ ^22\.[0-9]+\.[0-9]+$ ]]; then
+            echo "FAIL: invalid Node.js upstream version: ${upstream_version}"
+            echo "Expected format: 22.x.y"
+            exit 1
+          fi
+
+          echo "PASS: Node.js upstream version ${upstream_version}"
+
       - name: Validate Metadata Version
         shell: bash
         run: |
@@ -99,6 +128,36 @@ jobs:
 
           print("PASS: metadata version 22")
           PY
+
+      - name: Resolve Node.js Build Version
+        id: resolve-node-version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ -n "${{ inputs.upstream_version }}" ]]; then
+            node_build_version="${{ inputs.upstream_version }}"
+          else
+            node_build_version="$(
+              sed -n 's/^ARG NODE_VERSION=\(.*\)$/\1/p' \
+                images/runtime/node/Dockerfile \
+                | head -n 1
+            )"
+          fi
+
+          if [[ -z "${node_build_version}" ]]; then
+            echo "FAIL: unable to resolve Node.js build version"
+            exit 1
+          fi
+
+          if [[ ! "${node_build_version}" =~ ^22\.[0-9]+\.[0-9]+$ ]]; then
+            echo "FAIL: resolved invalid Node.js build version: ${node_build_version}"
+            exit 1
+          fi
+
+          echo "node-build-version=${node_build_version}" >> "${GITHUB_OUTPUT}"
+
+          echo "Node.js build version: ${node_build_version}"
 
   build:
     name: Build and Sign Node.js Image
@@ -137,6 +196,8 @@ jobs:
           push: true
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_VERSION }}
+          build-args: |
+            NODE_VERSION=${{ needs.validate.outputs.node-build-version }}
           provenance: true
           sbom: true
           cache-from: type=gha
@@ -235,6 +296,7 @@ jobs:
             echo
             echo "- Image: \`${IMAGE}\`"
             echo "- Version: \`${{ env.IMAGE_VERSION }}\`"
+            echo "- Node.js runtime: \`${{ needs.validate.outputs.node-build-version }}\`"
             echo "- Digest: \`${DIGEST}\`"
             echo "- Platforms: \`linux/amd64, linux/arm64\`"
             echo "- SBOM: generated"

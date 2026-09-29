@@ -18,6 +18,12 @@ on:
         type: boolean
         default: false
 
+      rebuild_on_upstream:
+        description: "Trigger release workflows when an upstream version changes"
+        required: true
+        type: boolean
+        default: true
+
       rebuild_family:
         description: "Optional image family to rebuild"
         required: false
@@ -34,6 +40,7 @@ on:
 permissions:
   contents: read
   actions: write
+  packages: read
 
 jobs:
   validate:
@@ -80,6 +87,137 @@ jobs:
           PY
 
           echo "config-valid=true" >> "${GITHUB_OUTPUT}"
+
+  upstream:
+    name: Check Upstream Versions
+    needs: validate
+    if: >
+      github.event_name == 'schedule' ||
+      inputs.rebuild_on_upstream
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    outputs:
+      debian-status: ${{ steps.detect.outputs.debian-status }}
+      python-status: ${{ steps.detect.outputs.python-status }}
+      node-status: ${{ steps.detect.outputs.node-status }}
+      node-version: ${{ steps.detect.outputs.node-version }}
+      java-status: ${{ steps.detect.outputs.java-status }}
+      nginx-status: ${{ steps.detect.outputs.nginx-status }}
+      nginx-version: ${{ steps.detect.outputs.nginx-version }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Make Upstream Check Executable
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          chmod +x scripts/check-upstream-updates.sh
+
+          test -x scripts/check-upstream-updates.sh
+
+          echo "PASS: upstream check script is executable"
+
+      - name: Run Upstream Check
+        id: detect
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ./scripts/check-upstream-updates.sh \
+            | tee upstream-check.txt
+
+          get_status() {
+            local heading="$1"
+
+            awk -v heading="${heading}" '
+              $0 == heading {
+                found=1
+                next
+              }
+
+              found && /^Status:/ {
+                sub(/^Status:[[:space:]]*/, "")
+                print
+                exit
+              }
+            ' upstream-check.txt
+          }
+
+          get_version() {
+            local heading="$1"
+
+            awk -v heading="${heading}" '
+              $0 == heading {
+                found=1
+                next
+              }
+
+              found && /^Upstream:/ {
+                sub(/^Upstream:[[:space:]]*/, "")
+                print
+                exit
+              }
+            ' upstream-check.txt
+          }
+
+          debian_status="$(get_status "== Debian 13 ==")"
+          python_status="$(get_status "== Python 3.13 ==")"
+          node_status="$(get_status "== Node.js 22 ==")"
+          java_status="$(get_status "== Java 21 ==")"
+          nginx_status="$(get_status "== Nginx 1.28 ==")"
+
+          node_version="$(get_version "== Node.js 22 ==")"
+          nginx_version="$(get_version "== Nginx 1.28 ==")"
+
+          for value in \
+            "${debian_status}" \
+            "${python_status}" \
+            "${node_status}" \
+            "${java_status}" \
+            "${nginx_status}"; do
+            if [[ -z "${value}" ]]; then
+              echo "FAIL: unable to parse upstream status"
+              exit 1
+            fi
+          done
+
+          if [[ -z "${node_version}" ]]; then
+            echo "FAIL: unable to parse Node.js upstream version"
+            exit 1
+          fi
+
+          if [[ -z "${nginx_version}" ]]; then
+            echo "FAIL: unable to parse Nginx upstream version"
+            exit 1
+          fi
+
+          echo "debian-status=${debian_status}" >> "${GITHUB_OUTPUT}"
+          echo "python-status=${python_status}" >> "${GITHUB_OUTPUT}"
+          echo "node-status=${node_status}" >> "${GITHUB_OUTPUT}"
+          echo "node-version=${node_version}" >> "${GITHUB_OUTPUT}"
+          echo "java-status=${java_status}" >> "${GITHUB_OUTPUT}"
+          echo "nginx-status=${nginx_status}" >> "${GITHUB_OUTPUT}"
+          echo "nginx-version=${nginx_version}" >> "${GITHUB_OUTPUT}"
+
+          echo
+          echo "Upstream status:"
+          echo "Debian:  ${debian_status}"
+          echo "Python:  ${python_status}"
+          echo "Node:    ${node_status} (${node_version})"
+          echo "Java:    ${java_status}"
+          echo "Nginx:   ${nginx_status} (${nginx_version})"
+
+      - name: Upload Upstream Evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: upstream-check
+          path: upstream-check.txt
+          if-no-files-found: error
+          retention-days: 30
 
   scan:
     name: Scan Published Images
@@ -244,11 +382,113 @@ jobs:
 
           echo "PASS: release workflow dispatched"
 
+  upstream-rebuild:
+    name: Trigger Upstream Rebuild
+    needs:
+      - validate
+      - upstream
+    if: >
+      needs.upstream.result == 'success' &&
+      (
+        github.event_name == 'schedule' ||
+        inputs.rebuild_on_upstream
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Trigger Upstream Releases
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+          DEBIAN_STATUS: ${{ needs.upstream.outputs.debian-status }}
+          PYTHON_STATUS: ${{ needs.upstream.outputs.python-status }}
+          NODE_STATUS: ${{ needs.upstream.outputs.node-status }}
+          NODE_VERSION: ${{ needs.upstream.outputs.node-version }}
+          JAVA_STATUS: ${{ needs.upstream.outputs.java-status }}
+          NGINX_STATUS: ${{ needs.upstream.outputs.nginx-status }}
+          NGINX_VERSION: ${{ needs.upstream.outputs.nginx-version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          dispatch_release() {
+            local workflow="$1"
+            local version="$2"
+            local upstream_version="${3:-}"
+
+            echo
+            echo "Dispatching ${workflow}"
+            echo "Image version: ${version}"
+
+            if [[ -n "${upstream_version}" ]]; then
+              echo "Upstream version: ${upstream_version}"
+
+              gh workflow run "${workflow}" \
+                --repo "${REPOSITORY}" \
+                --ref main \
+                -f version="${version}" \
+                -f upstream_version="${upstream_version}"
+            else
+              gh workflow run "${workflow}" \
+                --repo "${REPOSITORY}" \
+                --ref main \
+                -f version="${version}"
+            fi
+
+            echo "PASS: ${workflow} dispatched"
+          }
+
+          if [[ "${DEBIAN_STATUS}" == "UPDATE_AVAILABLE" ]]; then
+            dispatch_release \
+              "image-release.yml" \
+              "13"
+          fi
+
+          if [[ "${PYTHON_STATUS}" == "UPDATE_AVAILABLE" ]]; then
+            dispatch_release \
+              "python-release.yml" \
+              "3.13"
+          fi
+
+          if [[ "${NODE_STATUS}" == "UPDATE_AVAILABLE" ]]; then
+            dispatch_release \
+              "node-release.yml" \
+              "22" \
+              "${NODE_VERSION}"
+          fi
+
+          if [[ "${JAVA_STATUS}" == "UPDATE_AVAILABLE" ]]; then
+            dispatch_release \
+              "java-release.yml" \
+              "21"
+          fi
+
+          if [[ "${NGINX_STATUS}" == "UPDATE_AVAILABLE" ]]; then
+            dispatch_release \
+              "nginx-release.yml" \
+              "1.28" \
+              "${NGINX_VERSION}"
+          fi
+
+          if [[
+            "${DEBIAN_STATUS}" != "UPDATE_AVAILABLE" &&
+            "${PYTHON_STATUS}" != "UPDATE_AVAILABLE" &&
+            "${NODE_STATUS}" != "UPDATE_AVAILABLE" &&
+            "${JAVA_STATUS}" != "UPDATE_AVAILABLE" &&
+            "${NGINX_STATUS}" != "UPDATE_AVAILABLE"
+          ]]; then
+            echo "PASS: no upstream updates detected"
+          fi
+
   lifecycle-summary:
     name: Write Lifecycle Summary
     needs:
       - validate
+      - upstream
       - scan
+      - manual-rebuild
+      - upstream-rebuild
     if: always()
     runs-on: ubuntu-latest
 
@@ -260,7 +500,10 @@ jobs:
             echo "## Hardened Image Lifecycle"
             echo
             echo "- Configuration validation: completed"
-            echo "- Published image vulnerability scans: completed"
+            echo "- Upstream version detection: ${{ needs.upstream.result }}"
+            echo "- Published image vulnerability scans: ${{ needs.scan.result }}"
+            echo "- Manual rebuild: ${{ needs.manual-rebuild.result }}"
+            echo "- Upstream rebuild: ${{ needs.upstream-rebuild.result }}"
             echo
             echo "Families monitored:"
             echo "- Debian 13"
@@ -269,6 +512,7 @@ jobs:
             echo "- Java 21"
             echo "- Nginx 1.28"
             echo
-            echo "Qualifying vulnerabilities are retained as workflow artifacts."
-            echo "Rebuilds are dispatched only when explicitly requested."
-          } >> "${GITHUB_STEP_SUMMARY}" 
+            echo "Upstream rebuilds use detected upstream versions for Node.js and Nginx."
+            echo "Normal release workflows continue using Dockerfile defaults when no upstream override is supplied."
+            echo "Production promotion remains separate from lifecycle rebuilds."
+          } >> "${GITHUB_STEP_SUMMARY}"
