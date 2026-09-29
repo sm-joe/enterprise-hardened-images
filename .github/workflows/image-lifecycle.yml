@@ -320,6 +320,122 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+  cve-rebuild:
+    name: Trigger CVE Rebuild
+    needs:
+      - validate
+      - scan
+    if: >
+      needs.scan.result == 'success' &&
+      (
+        github.event_name == 'schedule' ||
+        (
+          github.event_name == 'workflow_dispatch' &&
+          inputs.rebuild_on_cve
+        )
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    
+    steps:
+      - name: Download Lifecycle Evidence
+        uses: actions/download-artifact@v8
+        with:
+          pattern: lifecycle-*
+          path: lifecycle-evidence
+          merge-multiple: true
+
+      - name: Check Fixed Vulnerabilities
+        id: evaluate
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          rebuild_families=()
+
+          for family in debian python node java nginx; do
+            file="lifecycle-evidence/lifecycle-${family}.txt"
+
+            if [[ ! -f "${file}" ]]; then
+              echo "FAIL: missing lifecycle evidence: ${file}"
+              exit 1
+            fi
+
+            if grep -q "NO_QUALIFYING_VULNERABILITIES" "${file}"; then
+              echo "PASS: ${family} has no qualifying vulnerabilities"
+              continue
+            fi
+
+            if grep -qE -- '-> [^[:space:]]+' "${file}"; then
+              echo "CVE rebuild required: ${family}"
+              rebuild_families+=("${family}")
+            else
+              echo "No fixed vulnerability requiring rebuild: ${family}"
+            fi
+          done
+
+          if [[ "${#rebuild_families[@]}" -eq 0 ]]; then
+            echo "rebuild-required=false" >> "${GITHUB_OUTPUT}"
+            echo "PASS: no CVE rebuilds required"
+            exit 0
+          fi
+
+          echo "rebuild-required=true" >> "${GITHUB_OUTPUT}"
+          echo "families=${rebuild_families[*]}" >> "${GITHUB_OUTPUT}"
+
+      - name: Trigger CVE Release Workflows
+        if: steps.evaluate.outputs.rebuild-required == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+          FAMILIES: ${{ steps.evaluate.outputs.families }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          for family in ${FAMILIES}; do
+            case "${family}" in
+              debian)
+                WORKFLOW="image-release.yml"
+                VERSION="13"
+                ;;
+
+              python)
+                WORKFLOW="python-release.yml"
+                VERSION="3.13"
+                ;;
+
+              node)
+                WORKFLOW="node-release.yml"
+                VERSION="22"
+                ;;
+
+              java)
+                WORKFLOW="java-release.yml"
+                VERSION="21"
+                ;;
+
+              nginx)
+                WORKFLOW="nginx-release.yml"
+                VERSION="1.28"
+                ;;
+
+              *)
+                echo "FAIL: unsupported CVE rebuild family: ${family}"
+                exit 1
+                ;;
+            esac
+
+            echo "Triggering CVE rebuild for ${family}"
+
+            gh workflow run "${WORKFLOW}" \
+              --repo "${REPOSITORY}" \
+              --ref main \
+              -f version="${VERSION}"
+
+            echo "PASS: ${WORKFLOW} dispatched"
+          done
+
   manual-rebuild:
     name: Trigger Requested Rebuild
     needs:
@@ -487,6 +603,7 @@ jobs:
       - validate
       - upstream
       - scan
+      - cve-rebuild
       - manual-rebuild
       - upstream-rebuild
     if: always()
@@ -502,6 +619,7 @@ jobs:
             echo "- Configuration validation: completed"
             echo "- Upstream version detection: ${{ needs.upstream.result }}"
             echo "- Published image vulnerability scans: ${{ needs.scan.result }}"
+            echo "- CVE rebuild: ${{ needs.cve-rebuild.result }}"
             echo "- Manual rebuild: ${{ needs.manual-rebuild.result }}"
             echo "- Upstream rebuild: ${{ needs.upstream-rebuild.result }}"
             echo
@@ -512,6 +630,7 @@ jobs:
             echo "- Java 21"
             echo "- Nginx 1.28"
             echo
+            echo "CVE rebuilds are triggered for HIGH/CRITICAL vulnerabilities with a known fixed version."
             echo "Upstream rebuilds use detected upstream versions for Node.js and Nginx."
             echo "Normal release workflows continue using Dockerfile defaults when no upstream override is supplied."
             echo "Production promotion remains separate from lifecycle rebuilds."
