@@ -1,0 +1,244 @@
+name: Node.js 22 Image Release Pipeline
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Node.js image release version
+        required: true
+        type: string
+        default: "22"
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository_owner }}/enterprise-hardened-node
+  IMAGE_VERSION: ${{ inputs.version }}
+
+jobs:
+  validate:
+    name: Validate Node.js Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Validate Required Files
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          required_files=(
+            "images/runtime/node/Dockerfile"
+            "metadata/node.yaml"
+            "metadata/image.schema.json"
+            "tests/container/test-node-base.sh"
+          )
+
+          for file in "${required_files[@]}"; do
+            if [[ ! -f "${file}" ]]; then
+              echo "FAIL: required file missing: ${file}"
+              exit 1
+            fi
+
+            echo "PASS: ${file}"
+          done
+
+          echo "PASS: required repository files exist"
+
+      - name: Validate Node.js Version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          version="${{ inputs.version }}"
+
+          if [[ "${version}" != "22" ]]; then
+            echo "ERROR: unsupported Node.js release version '${version}'"
+            echo "Expected: 22"
+            exit 1
+          fi
+
+          echo "PASS: Node.js release version ${version}"
+
+      - name: Validate Metadata Version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          python3 - <<'PY'
+          import pathlib
+          import re
+
+          path = pathlib.Path("metadata/node.yaml")
+          text = path.read_text()
+
+          match = re.search(
+              r'^version:\s*"([^"]+)"\s*$',
+              text,
+              re.MULTILINE,
+          )
+
+          if not match:
+              raise SystemExit(
+                  "FAIL: metadata/node.yaml has no version"
+              )
+
+          version = match.group(1)
+
+          if version != "22":
+              raise SystemExit(
+                  f"FAIL: metadata version is {version!r}; expected '22'"
+              )
+
+          print("PASS: metadata version 22")
+          PY
+
+  build:
+    name: Build and Sign Node.js Image
+    needs:
+      - validate
+
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and Push Node.js Image
+        id: build-and-push
+        uses: docker/build-push-action@v7.4.0
+        with:
+          context: .
+          file: images/runtime/node/Dockerfile
+          platforms: |
+            linux/amd64
+            linux/arm64
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_VERSION }}
+          provenance: true
+          sbom: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Capture Image Digest
+        env:
+          DIGEST: ${{ steps.build-and-push.outputs.digest }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ ! "${DIGEST}" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+            echo "FAIL: invalid image digest: ${DIGEST}"
+            exit 1
+          fi
+
+          echo "Image digest:"
+          echo "${DIGEST}"
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign Node.js Image
+        env:
+          IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_VERSION }}
+          DIGEST: ${{ steps.build-and-push.outputs.digest }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cosign sign --yes "${IMAGE}@${DIGEST}"
+
+          echo "PASS: Node.js image signed"
+
+      - name: Verify Node.js Image Signature
+        env:
+          IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build-and-push.outputs.digest }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cosign verify \
+            --certificate-identity-regexp "^https://github.com/${{ github.repository }}/.github/workflows/node-release.yml@refs/heads/main$" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            "${IMAGE}"
+
+          echo "PASS: Node.js image signature verified"
+
+      - name: Inspect Published Image
+        env:
+          IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_VERSION }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          docker buildx imagetools inspect "${IMAGE}"
+
+          echo "PASS: published Node.js manifest is accessible"
+
+      - name: Verify Published Digest
+        env:
+          IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_VERSION }}
+          EXPECTED_DIGEST: ${{ steps.build-and-push.outputs.digest }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          published_digest="$(
+            docker buildx imagetools inspect "${IMAGE}" \
+              --format '{{json .Manifest.Digest}}'
+          )"
+
+          published_digest="${published_digest//\"/}"
+
+          echo "Expected:  ${EXPECTED_DIGEST}"
+          echo "Published: ${published_digest}"
+
+          if [[ "${published_digest}" != "${EXPECTED_DIGEST}" ]]; then
+            echo "FAIL: published digest does not match build digest"
+            exit 1
+          fi
+
+          echo "PASS: published digest matches build digest"
+
+      - name: Release Summary
+        env:
+          IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_VERSION }}
+          DIGEST: ${{ steps.build-and-push.outputs.digest }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          {
+            echo "## Node.js 22 Image Release"
+            echo
+            echo "- Image: \`${IMAGE}\`"
+            echo "- Version: \`${{ env.IMAGE_VERSION }}\`"
+            echo "- Digest: \`${DIGEST}\`"
+            echo "- Platforms: \`linux/amd64, linux/arm64\`"
+            echo "- SBOM: generated"
+            echo "- Provenance: generated"
+            echo "- Signature: verified"
+            echo "- Release model: immutable digest"
+          } >> "${GITHUB_STEP_SUMMARY}"
