@@ -17,6 +17,8 @@ USER root
 # Nginx packages are obtained from the official Nginx Debian repository.
 # The repository signing key fingerprint is verified before installation.
 # hadolint ignore=DL3008
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         ca-certificates \
