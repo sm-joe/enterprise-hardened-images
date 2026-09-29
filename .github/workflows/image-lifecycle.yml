@@ -1,4 +1,4 @@
-name: Hardened Image Lifecycle
+name: Hardened Image Lifecycle Pipeline
 
 on:
   schedule:
