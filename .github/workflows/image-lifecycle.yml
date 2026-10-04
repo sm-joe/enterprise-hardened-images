@@ -431,6 +431,7 @@ jobs:
             gh workflow run "${WORKFLOW}" \
               --repo "${REPOSITORY}" \
               --ref main \
+              -f image="${family}" \
               -f version="${VERSION}"
 
             echo "PASS: ${WORKFLOW} dispatched"
