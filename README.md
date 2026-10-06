@@ -1,38 +1,38 @@
 # Enterprise Hardened Images
 
-```{=html}
+{=html}
 <p align="center">
-```
+
 `<strong>`{=html}CIS L1-aligned enterprise container images for secure,
 portable application runtimes.`</strong>`{=html}`<br>`{=html} Hardened
 Docker images with non-root execution, reduced privileges, security
 testing, SBOM, provenance, signing, multi-architecture releases, and
 lifecycle automation.
-```{=html}
+{=html}
 </p>
-```
-```{=html}
+
+{=html}
 <p align="center">
-```
+
 `<img src="https://img.shields.io/badge/Debian-13-A81D33?style=for-the-badge&logo=debian&logoColor=white" alt="Debian 13">`{=html}
 `<img src="https://img.shields.io/badge/Python-3.13-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python 3.13">`{=html}
 `<img src="https://img.shields.io/badge/Node.js-22-339933?style=for-the-badge&logo=node.js&logoColor=white" alt="Node.js 22">`{=html}
 `<img src="https://img.shields.io/badge/Java-21-ED8B00?style=for-the-badge&logo=openjdk&logoColor=white" alt="Java 21">`{=html}
 `<img src="https://img.shields.io/badge/Nginx-1.28-009639?style=for-the-badge&logo=nginx&logoColor=white" alt="Nginx 1.28">`{=html}
-```{=html}
+{=html}
 </p>
-```
-```{=html}
+
+{=html}
 <p align="center">
-```
+
 `<img src="https://img.shields.io/badge/CIS-L1--aligned-2ea44f?style=flat-square" alt="CIS L1 aligned">`{=html}
 `<img src="https://img.shields.io/badge/SBOM-generated-6f42c1?style=flat-square" alt="SBOM">`{=html}
 `<img src="https://img.shields.io/badge/Provenance-generated-2088FF?style=flat-square" alt="Provenance">`{=html}
 `<img src="https://img.shields.io/badge/Cosign-signed-1904DA?style=flat-square" alt="Cosign">`{=html}
 `<img src="https://img.shields.io/badge/28%2F28-controls-success?style=flat-square" alt="28 controls">`{=html}
-```{=html}
+{=html}
 </p>
-```
+
 
 ------------------------------------------------------------------------
 
@@ -116,7 +116,7 @@ concrete requirement.
 
 # Architecture
 
-``` text
+ text
                          Application
                               |
                               v
@@ -139,11 +139,11 @@ concrete requirement.
        Security Tests    Supply Chain       Lifecycle
        CIS/runtime       SBOM/provenance     CVE/upstream
        regression        signing             rebuilds
-```
+
 
 ## Image relationship
 
-``` text
+ text
 debian:13
     |
     v
@@ -152,7 +152,7 @@ enterprise-hardened-debian:13
     +--> enterprise-hardened-node:22
     +--> enterprise-hardened-java:21
     +--> enterprise-hardened-nginx:1.28
-```
+
 
 ------------------------------------------------------------------------
 
@@ -201,10 +201,10 @@ The authoritative matrix is `docs/SECURITY-CONTROL-MATRIX.csv`.
 
 Runtime images execute as:
 
-``` text
+ text
 UID 10001
 GID 10001
-```
+
 
 Applications are not expected to run as root.
 
@@ -213,10 +213,10 @@ Applications are not expected to run as root.
 The image test suite rejects unnecessary network, debugging, and
 administrative tools unless explicitly justified, including:
 
-``` text
+ text
 curl  wget  openssh  git  vim  nano
 gcc   make  netcat  telnet  ftp
-```
+
 
 Runtime-specific packages remain documented and tested.
 
@@ -225,7 +225,7 @@ Runtime-specific packages remain documented and tested.
 Image configuration is checked for credential-related environment
 variables such as:
 
-``` text
+ text
 AWS_ACCESS_KEY_ID
 AWS_SECRET_ACCESS_KEY
 AWS_SESSION_TOKEN
@@ -236,18 +236,18 @@ GH_TOKEN
 NPM_TOKEN
 NODE_AUTH_TOKEN
 DOCKER_AUTH_CONFIG
-```
+
 
 ## Runtime hardening
 
 The images are designed to work with:
 
-``` text
+ text
 --read-only
 --cap-drop=ALL
 --security-opt=no-new-privileges:true
 --tmpfs /tmp:rw,nosuid,nodev,noexec
-```
+
 
 Runtime regression tests verify identity, protected filesystem paths,
 writable temporary storage, effective capabilities, `NoNewPrivs`, and
@@ -257,7 +257,7 @@ SUID/SGID state.
 
 # Build and Release Flow
 
-``` text
+ text
 Source Change
      |
      v
@@ -294,7 +294,7 @@ Release
      |
      v
 Published Multi-Arch Image
-```
+
 
 ------------------------------------------------------------------------
 
@@ -319,7 +319,7 @@ dispatch the appropriate release workflow.
 
 ## CVE-triggered rebuilds
 
-``` text
+ text
 HIGH / CRITICAL vulnerability
           |
           +--> fixed version available
@@ -331,7 +331,7 @@ HIGH / CRITICAL vulnerability
                      |
                      v
                remain governed
-```
+
 
 This avoids meaningless rebuild loops for vulnerabilities without an
 available fix while allowing fixed vulnerabilities to trigger a new
@@ -343,20 +343,20 @@ release.
 
 Every production release is designed to provide:
 
-``` text
+ text
 Image
   +-- Multi-architecture manifest
   +-- SBOM attestation
   +-- Build provenance
   +-- Cosign signature
-```
+
 
 Supported architectures:
 
-``` text
+ text
 linux/amd64
 linux/arm64
-```
+
 
 ------------------------------------------------------------------------
 
@@ -366,27 +366,27 @@ Base image references use explicit release tags.
 
 Allowed:
 
-``` dockerfile
+ dockerfile
 FROM debian:13
 FROM ghcr.io/sm-joe/enterprise-hardened-debian:13
-```
+
 
 Not allowed:
 
-``` dockerfile
+ dockerfile
 FROM debian:latest
 FROM debian
 FROM debian@sha256:...
-```
+
 
 The project uses explicit release tags to keep upstream lifecycle
 tracking clear.
 
 Validation is implemented in:
 
-``` text
+ text
 tests/cis/test-base-image-release.sh
-```
+
 
 ------------------------------------------------------------------------
 
@@ -394,7 +394,7 @@ tests/cis/test-base-image-release.sh
 
 Example hardened Docker invocation:
 
-``` powershell
+ powershell
 docker run --rm `
   --read-only `
   --cap-drop=ALL `
@@ -402,7 +402,7 @@ docker run --rm `
   --tmpfs /tmp:rw,nosuid,nodev,noexec `
   ghcr.io/sm-joe/enterprise-hardened-python:3.13 `
   python --version
-```
+
 
 The runtime security regression suite verifies:
 
@@ -423,35 +423,35 @@ Common hardened foundation with a dedicated non-root user/group,
 SUID/SGID cleanup, minimal filesystem setup, cleaned package metadata,
 `/app`, and runtime healthcheck.
 
-``` powershell
+ powershell
 docker pull ghcr.io/sm-joe/enterprise-hardened-debian:13
-```
+
 
 ## Python 3.13
 
 Python application runtime based on the hardened Debian 13 foundation.
 
-``` powershell
+ powershell
 docker pull ghcr.io/sm-joe/enterprise-hardened-python:3.13
-```
+
 
 ## Node.js 22
 
 Node.js 22 runtime using the official Node.js distribution on the
 hardened Debian foundation.
 
-``` powershell
+ powershell
 docker pull ghcr.io/sm-joe/enterprise-hardened-node:22
-```
+
 
 ## Java 21
 
 JRE-oriented Java runtime. The baseline uses `openjdk-21-jre-headless`
 and does not include the JDK/compiler toolchain.
 
-``` powershell
+ powershell
 docker pull ghcr.io/sm-joe/enterprise-hardened-java:21
-```
+
 
 ## Nginx 1.28
 
@@ -459,9 +459,9 @@ Nginx runtime using the official Nginx Debian repository with
 signing-key verification. It runs as non-root, listens on `8080`, and
 uses approved temporary paths.
 
-``` powershell
+ powershell
 docker pull ghcr.io/sm-joe/enterprise-hardened-nginx:1.28
-```
+
 
 ------------------------------------------------------------------------
 
@@ -477,27 +477,27 @@ Install:
 
 ## Pull an image
 
-``` powershell
+ powershell
 docker pull ghcr.io/sm-joe/enterprise-hardened-python:3.13
-```
+
 
 ## Inspect an image
 
-``` powershell
+ powershell
 docker image inspect ghcr.io/sm-joe/enterprise-hardened-python:3.13
-```
+
 
 ## Run as non-root
 
-``` powershell
+ powershell
 docker run --rm `
   ghcr.io/sm-joe/enterprise-hardened-python:3.13 `
   python --version
-```
+
 
 ## Run with runtime hardening
 
-``` powershell
+ powershell
 docker run --rm `
   --read-only `
   --cap-drop=ALL `
@@ -505,13 +505,13 @@ docker run --rm `
   --tmpfs /tmp:rw,nosuid,nodev,noexec `
   ghcr.io/sm-joe/enterprise-hardened-python:3.13 `
   python --version
-```
+
 
 ------------------------------------------------------------------------
 
 # Repository Layout
 
-``` text
+ text
 enterprise-hardened-images/
 ├── .github/
 │   ├── ISSUE_TEMPLATE/
@@ -549,7 +549,7 @@ enterprise-hardened-images/
 ├── LICENSE
 ├── README.md
 └── SECURITY.md
-```
+
 
 ------------------------------------------------------------------------
 
@@ -557,31 +557,31 @@ enterprise-hardened-images/
 
 Container tests cover each supported family:
 
-``` powershell
+ powershell
 bash tests/container/test-debian-base.sh
 bash tests/container/test-python-base.sh
 bash tests/container/test-node-base.sh
 bash tests/container/test-java-base.sh
 bash tests/container/test-nginx-base.sh
-```
+
 
 Image policy:
 
-``` powershell
+ powershell
 bash tests/container/test-image-policy.sh
-```
+
 
 Base-image release validation:
 
-``` powershell
+ powershell
 bash tests/cis/test-base-image-release.sh
-```
+
 
 Runtime integration/security validation:
 
-``` powershell
+ powershell
 bash tests/integration/test-runtime-security.sh
-```
+
 
 GitHub Actions remains the authoritative repository-wide validation
 path.
@@ -593,7 +593,7 @@ path.
 The repository uses GitHub Actions for source validation, image testing,
 releases, and lifecycle operations.
 
-``` text
+ text
 Change / Release
        |
        v
@@ -624,7 +624,7 @@ GHCR
        |
        v
 Lifecycle Monitoring
-```
+
 
 ------------------------------------------------------------------------
 
@@ -670,10 +670,10 @@ See [`SECURITY.md`](SECURITY.md) for the public security policy.
 
 Exceptions are governed rather than silently ignored.
 
-``` text
+ text
 policies/security-exceptions.yaml
 docs/SECURITY-EXCEPTIONS.md
-```
+
 
 A security exception should identify the affected control/image, owner,
 reason, risk, compensating control, and review or expiry information.
@@ -686,7 +686,7 @@ Consuming workloads should preserve the image security model.
 
 Recommended Kubernetes baseline:
 
-``` yaml
+ yaml
 securityContext:
   runAsNonRoot: true
   runAsUser: 10001
@@ -696,7 +696,7 @@ securityContext:
   capabilities:
     drop:
       - ALL
-```
+
 
 The application workload remains responsible for application-specific
 writable paths, ports, capabilities, secrets, and network policy.
@@ -707,7 +707,7 @@ writable paths, ports, capabilities, secrets, and network policy.
 
 Example application image:
 
-``` dockerfile
+ dockerfile
 FROM ghcr.io/sm-joe/enterprise-hardened-python:3.13
 
 WORKDIR /app
@@ -720,7 +720,7 @@ COPY . .
 USER 10001:10001
 
 CMD ["python", "app.py"]
-```
+
 
 Application images should not switch back to root or add unnecessary
 administrative tooling without an explicit security justification.
@@ -796,25 +796,25 @@ baseline rather than expanding without a concrete requirement.
 
 The frozen baseline is:
 
-``` text
+ text
 security-baseline-v1
-```
+
 
 The public release is:
 
-``` text
+ text
 v1.0.0
-```
+
 
 It contains:
 
-``` text
+ text
 Debian 13
 Python 3.13
 Node.js 22
 Java 21
 Nginx 1.28
-```
+
 
 New image families should be introduced only when a concrete requirement
 justifies expanding the supported surface.
