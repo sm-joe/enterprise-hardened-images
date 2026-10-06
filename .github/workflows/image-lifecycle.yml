@@ -428,11 +428,18 @@ jobs:
 
             echo "Triggering CVE rebuild for ${family}"
 
-            gh workflow run "${WORKFLOW}" \
+            if [[ "${family}" == "debian" ]]; then
+              gh workflow run "${WORKFLOW}" \
+                --repo "${REPOSITORY}" \
+                --ref main \
+                -f image="${family}" \
+                -f version="${VERSION}"
+            else
+              gh workflow run "${WORKFLOW}" \
               --repo "${REPOSITORY}" \
               --ref main \
-              -f image="${family}" \
               -f version="${VERSION}"
+            fi
 
             echo "PASS: ${WORKFLOW} dispatched"
           done
