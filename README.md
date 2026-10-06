@@ -1,38 +1,26 @@
 # Enterprise Hardened Images
 
-```{=html}
 <p align="center">
-```
-`<strong>`{=html}CIS L1-aligned enterprise container images for secure,
-portable application runtimes.`</strong>`{=html}`<br>`{=html} Hardened
+<strong>CIS L1-aligned enterprise container images for secure,
+portable application runtimes.</strong><br> Hardened
 Docker images with non-root execution, reduced privileges, security
 testing, SBOM, provenance, signing, multi-architecture releases, and
 lifecycle automation.
-```{=html}
 </p>
-```
-```{=html}
 <p align="center">
-```
-`<img src="https://img.shields.io/badge/Debian-13-A81D33?style=for-the-badge&logo=debian&logoColor=white" alt="Debian 13">`{=html}
-`<img src="https://img.shields.io/badge/Python-3.13-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python 3.13">`{=html}
-`<img src="https://img.shields.io/badge/Node.js-22-339933?style=for-the-badge&logo=node.js&logoColor=white" alt="Node.js 22">`{=html}
-`<img src="https://img.shields.io/badge/Java-21-ED8B00?style=for-the-badge&logo=openjdk&logoColor=white" alt="Java 21">`{=html}
-`<img src="https://img.shields.io/badge/Nginx-1.28-009639?style=for-the-badge&logo=nginx&logoColor=white" alt="Nginx 1.28">`{=html}
-```{=html}
+<img src="https://img.shields.io/badge/Debian-13-A81D33?style=for-the-badge&logo=debian&logoColor=white" alt="Debian 13">
+<img src="https://img.shields.io/badge/Python-3.13-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python 3.13">
+<img src="https://img.shields.io/badge/Node.js-22-339933?style=for-the-badge&logo=node.js&logoColor=white" alt="Node.js 22">
+<img src="https://img.shields.io/badge/Java-21-ED8B00?style=for-the-badge&logo=openjdk&logoColor=white" alt="Java 21">
+<img src="https://img.shields.io/badge/Nginx-1.28-009639?style=for-the-badge&logo=nginx&logoColor=white" alt="Nginx 1.28">
 </p>
-```
-```{=html}
 <p align="center">
-```
-`<img src="https://img.shields.io/badge/CIS-L1--aligned-2ea44f?style=flat-square" alt="CIS L1 aligned">`{=html}
-`<img src="https://img.shields.io/badge/SBOM-generated-6f42c1?style=flat-square" alt="SBOM">`{=html}
-`<img src="https://img.shields.io/badge/Provenance-generated-2088FF?style=flat-square" alt="Provenance">`{=html}
-`<img src="https://img.shields.io/badge/Cosign-signed-1904DA?style=flat-square" alt="Cosign">`{=html}
-`<img src="https://img.shields.io/badge/28%2F28-controls-success?style=flat-square" alt="28 controls">`{=html}
-```{=html}
+<img src="https://img.shields.io/badge/CIS-L1--aligned-2ea44f?style=flat-square" alt="CIS L1 aligned">
+<img src="https://img.shields.io/badge/SBOM-generated-6f42c1?style=flat-square" alt="SBOM">
+<img src="https://img.shields.io/badge/Provenance-generated-2088FF?style=flat-square" alt="Provenance">
+<img src="https://img.shields.io/badge/Cosign-signed-1904DA?style=flat-square" alt="Cosign">
+<img src="https://img.shields.io/badge/28%2F28-controls-success?style=flat-square" alt="28 controls">
 </p>
-```
 
 ------------------------------------------------------------------------
 
